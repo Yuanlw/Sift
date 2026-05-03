@@ -10,6 +10,8 @@ const serverEnvSchema = z.object({
     .min(1)
     .default("Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit"),
   MODEL_EMBEDDING_MODEL: z.string().min(1).default("bge-m3-mlx-fp16"),
+  MODEL_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1024),
+  JOB_DISPATCHER: z.enum(["none", "inngest", "inline"]).default("inline"),
   SIFT_SINGLE_USER_ID: z.string().uuid().default("00000000-0000-0000-0000-000000000001"),
 });
 
@@ -28,6 +30,8 @@ export function getServerEnv() {
     MODEL_API_KEY: process.env.MODEL_API_KEY,
     MODEL_TEXT_MODEL: process.env.MODEL_TEXT_MODEL,
     MODEL_EMBEDDING_MODEL: process.env.MODEL_EMBEDDING_MODEL,
+    MODEL_EMBEDDING_DIMENSIONS: process.env.MODEL_EMBEDDING_DIMENSIONS,
+    JOB_DISPATCHER: process.env.JOB_DISPATCHER,
     SIFT_SINGLE_USER_ID: process.env.SIFT_SINGLE_USER_ID,
   });
 

@@ -121,3 +121,18 @@ MODEL_BASE_URL=http://127.0.0.1:9000/v1
 
 不同 provider 只应该影响 adapter，不应该影响业务逻辑。
 
+## 任务派发
+
+Docker 一键启动默认使用：
+
+```text
+JOB_DISPATCHER=inline
+```
+
+这会在保存请求中直接运行处理链路，便于单机 Docker 验证。后台异步处理后续可切换为：
+
+```text
+JOB_DISPATCHER=inngest
+```
+
+并接入本地 Inngest dev server 或云端 Inngest。

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { inngest } from "@/lib/inngest/client";
 import { query } from "@/lib/db";
 import { getServerEnv, MissingEnvError } from "@/lib/env";
+import { processCaptureById } from "@/lib/processing/process-capture";
 import type { Capture } from "@/types/database";
 
 const createCaptureSchema = z
@@ -39,14 +40,34 @@ export async function POST(request: Request) {
       [capture.id, env.SIFT_SINGLE_USER_ID],
     );
 
-    await inngest.send({
-      name: "capture/process.requested",
-      data: {
-        captureId: capture.id,
-      },
-    });
+    let processingResult: Awaited<ReturnType<typeof processCaptureById>> | null = null;
 
-    return NextResponse.json({ capture });
+    if (env.JOB_DISPATCHER === "inline") {
+      processingResult = await processCaptureById(capture.id);
+    }
+
+    if (env.JOB_DISPATCHER === "inngest") {
+      await inngest.send({
+        name: "capture/process.requested",
+        data: {
+          captureId: capture.id,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      capture,
+      job: {
+        dispatcher: env.JOB_DISPATCHER,
+        status:
+          env.JOB_DISPATCHER === "inline"
+            ? "completed"
+            : env.JOB_DISPATCHER === "inngest"
+              ? "dispatched"
+              : "queued",
+      },
+      processingResult,
+    });
   } catch (error) {
     if (error instanceof MissingEnvError) {
       return NextResponse.json(

@@ -30,6 +30,8 @@ cp .env.example .env.local
 - `MODEL_API_KEY`
 - `MODEL_TEXT_MODEL`
 - `MODEL_EMBEDDING_MODEL`
+- `MODEL_EMBEDDING_DIMENSIONS`
+- `JOB_DISPATCHER`
 - `INNGEST_EVENT_KEY`
 - `INNGEST_SIGNING_KEY`
 - `SIFT_SINGLE_USER_ID`
@@ -87,6 +89,7 @@ Phase 0 不绑定 OpenAI 官方服务。默认使用 OpenAI-compatible API：
 MODEL_BASE_URL=http://127.0.0.1:9000/v1
 MODEL_TEXT_MODEL=Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit
 MODEL_EMBEDDING_MODEL=bge-m3-mlx-fp16
+MODEL_EMBEDDING_DIMENSIONS=1024
 MODEL_API_KEY=local
 ```
 
@@ -96,6 +99,24 @@ MODEL_API_KEY=local
 - `/v1/embeddings`
 
 Sift 就可以先用本地模型跑通。
+
+## 任务派发
+
+Phase 0 Docker 默认：
+
+```text
+JOB_DISPATCHER=inline
+```
+
+这表示保存资料时会立即处理 Capture，方便 Docker 单机验证完整链路。
+
+需要启用 Inngest 时再改成：
+
+```text
+JOB_DISPATCHER=inngest
+```
+
+并配置本地或云端 Inngest。
 
 ## 开发命令
 

@@ -74,7 +74,7 @@ create table chunks (
   parent_type text not null check (parent_type in ('source', 'wiki_page')),
   parent_id uuid not null,
   content text not null,
-  embedding vector(1536),
+  embedding vector(1024),
   token_count integer,
   created_at timestamptz not null default now()
 );
