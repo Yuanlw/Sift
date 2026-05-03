@@ -6,6 +6,42 @@ export type JobStatus = "queued" | "running" | "completed" | "failed";
 export type JobType = "process_capture";
 export type WikiPageStatus = "draft" | "published" | "archived";
 
+export interface Capture {
+  id: string;
+  user_id: string;
+  type: CaptureType;
+  raw_url: string | null;
+  raw_text: string | null;
+  file_url: string | null;
+  note: string | null;
+  status: CaptureStatus;
+  created_at: string;
+}
+
+export interface Source {
+  id: string;
+  capture_id: string;
+  user_id: string;
+  title: string;
+  source_type: CaptureType;
+  original_url: string | null;
+  extracted_text: string;
+  summary: string | null;
+  metadata: Json;
+  created_at: string;
+}
+
+export interface WikiPage {
+  id: string;
+  user_id: string;
+  title: string;
+  slug: string;
+  content_markdown: string;
+  status: WikiPageStatus;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {

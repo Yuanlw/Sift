@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d postgres",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -12,10 +15,11 @@
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
     "@supabase/supabase-js": "^2.45.4",
+    "@types/pg": "^8.20.0",
     "inngest": "^3.22.0",
     "jsdom": "^25.0.1",
     "next": "^14.2.15",
-    "openai": "^4.67.3",
+    "pg": "^8.20.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^3.23.8"

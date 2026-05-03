@@ -4,8 +4,8 @@
 
 - Node.js 20+
 - npm
-- Supabase 项目
-- OpenAI API Key
+- Docker Desktop
+- 本地 OpenAI-compatible 模型服务，或其他兼容 `/v1/chat/completions` 和 `/v1/embeddings` 的模型服务
 - Inngest 开发环境
 
 ## 安装依赖
@@ -24,12 +24,12 @@ cp .env.example .env.local
 
 填写：
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
-- `OPENAI_TEXT_MODEL`
-- `OPENAI_EMBEDDING_MODEL`
+- `DATABASE_URL`
+- `MODEL_PROVIDER`
+- `MODEL_BASE_URL`
+- `MODEL_API_KEY`
+- `MODEL_TEXT_MODEL`
+- `MODEL_EMBEDDING_MODEL`
 - `INNGEST_EVENT_KEY`
 - `INNGEST_SIGNING_KEY`
 - `SIFT_SINGLE_USER_ID`
@@ -38,7 +38,19 @@ Phase 0 使用 hardcoded 单用户，`SIFT_SINGLE_USER_ID` 可以先保留默认
 
 ## 数据库
 
-在 Supabase SQL Editor 中执行：
+本地优先使用 Docker 启动 Postgres + pgvector：
+
+```bash
+npm run db:up
+```
+
+默认连接：
+
+```text
+postgres://sift:sift@localhost:5432/sift
+```
+
+容器首次启动会自动执行：
 
 ```text
 supabase/schema.sql
@@ -53,6 +65,26 @@ supabase/schema.sql
 - `source_wiki_pages`
 - `chunks`
 - pgvector extension
+
+如果未来使用 Supabase、Neon、RDS 或其他 Postgres 服务，只要执行同一份 schema，并把 `DATABASE_URL` 改成对应连接串即可。
+
+## 模型
+
+Phase 0 不绑定 OpenAI 官方服务。默认使用 OpenAI-compatible API：
+
+```text
+MODEL_BASE_URL=http://127.0.0.1:9000/v1
+MODEL_TEXT_MODEL=Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit
+MODEL_EMBEDDING_MODEL=bge-m3-mlx-fp16
+MODEL_API_KEY=local
+```
+
+只要本地模型服务提供：
+
+- `/v1/chat/completions`
+- `/v1/embeddings`
+
+Sift 就可以先用本地模型跑通。
 
 ## 开发命令
 
@@ -81,4 +113,4 @@ npm run build
 - 图片上传 UI 还没接入，只预留了数据结构。
 - 还没有正式账号系统。
 - 还没有知识库级问答。
-- Supabase 类型暂时使用运行时客户端，等真实数据库稳定后再用 Supabase CLI 生成类型。
+- 模型层当前先支持 OpenAI-compatible provider，后续再增加 Anthropic、OpenAI、Gemini 等专用 adapter。

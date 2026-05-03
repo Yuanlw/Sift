@@ -45,6 +45,19 @@ MVP 包含：
 - 简单知识库浏览
 - 基于个人知识库的问答
 
+## 本地优先
+
+Sift 不绑定 Supabase 或 OpenAI 官方服务。
+
+Phase 0 默认使用：
+
+- Docker Postgres + pgvector
+- OpenAI-compatible 本地模型服务
+- 本地文本模型：`Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit`
+- 本地 embedding 模型：`bge-m3-mlx-fp16`
+
+未来再通过 provider adapter 支持主流模型厂商。
+
 ## 核心原则
 
 - 不做又一个收藏夹。

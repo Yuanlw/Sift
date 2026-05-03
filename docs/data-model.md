@@ -151,3 +151,14 @@ Chunk 可以来自 Source，也可以来自 WikiPage。
 
 原因：这些模型有长期价值，但会让 MVP 过早进入知识图谱复杂度。第一版应该先验证“内容进来，知识出去”的闭环。
 
+## 数据库选择
+
+这些模型只要求 Postgres + pgvector，不绑定 Supabase。
+
+本地开发可以使用 Docker：
+
+```text
+postgres://sift:sift@localhost:5432/sift
+```
+
+未来生产环境可以切换到 Supabase、Neon、RDS 或其他 Postgres 服务。

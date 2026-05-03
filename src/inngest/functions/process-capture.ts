@@ -1,37 +1,38 @@
 import { chunkText, roughTokenCount } from "@/lib/chunk";
+import { query } from "@/lib/db";
 import { extractCaptureText } from "@/lib/extraction";
 import { inngest } from "@/lib/inngest/client";
-import { embedTexts, generateKnowledgeDraft } from "@/lib/openai";
+import { embedTexts, generateKnowledgeDraft } from "@/lib/models";
 import { toSlug } from "@/lib/slug";
-import { createServiceClient } from "@/lib/supabase/server";
+import type { Capture, Source, WikiPage } from "@/types/database";
 
 export const processCapture = inngest.createFunction(
   { id: "process-capture" },
   { event: "capture/process.requested" },
   async ({ event, step }) => {
     const captureId = event.data.captureId as string;
-    const supabase = createServiceClient();
 
     const capture = await step.run("load capture", async () => {
-      const { data, error } = await supabase
-        .from("captures")
-        .select("*")
-        .eq("id", captureId)
-        .single();
+      const result = await query<Capture>("select * from captures where id = $1", [captureId]);
+      const row = result.rows[0];
 
-      if (error) {
-        throw new Error(error.message);
+      if (!row) {
+        throw new Error(`Capture not found: ${captureId}`);
       }
 
-      return data;
+      return row;
     });
 
     await step.run("mark processing", async () => {
-      await supabase.from("captures").update({ status: "processing" }).eq("id", capture.id);
-      await supabase
-        .from("processing_jobs")
-        .update({ status: "running", started_at: new Date().toISOString() })
-        .eq("capture_id", capture.id);
+      await query("update captures set status = 'processing' where id = $1", [capture.id]);
+      await query(
+        `
+          update processing_jobs
+          set status = 'running', started_at = now()
+          where capture_id = $1
+        `,
+        [capture.id],
+      );
     });
 
     try {
@@ -47,60 +48,56 @@ export const processCapture = inngest.createFunction(
       );
 
       const source = await step.run("create source", async () => {
-        const { data, error } = await supabase
-          .from("sources")
-          .insert({
-            capture_id: capture.id,
-            user_id: capture.user_id,
-            title: draft.title || extracted.title,
-            source_type: capture.type,
-            original_url: capture.raw_url,
-            extracted_text: extracted.text,
-            summary: draft.summary,
-            metadata: extracted.metadata,
-          })
-          .select()
-          .single();
+        const result = await query<Source>(
+          `
+            insert into sources (
+              capture_id, user_id, title, source_type, original_url, extracted_text, summary, metadata
+            )
+            values ($1, $2, $3, $4, $5, $6, $7, $8)
+            returning *
+          `,
+          [
+            capture.id,
+            capture.user_id,
+            draft.title || extracted.title,
+            capture.type,
+            capture.raw_url,
+            extracted.text,
+            draft.summary,
+            extracted.metadata,
+          ],
+        );
 
-        if (error) {
-          throw new Error(error.message);
-        }
-
-        return data;
+        return result.rows[0];
       });
 
       const wikiPage = await step.run("create wiki page", async () => {
         const slug = toSlug(draft.wikiTitle || source.title || source.id) || source.id;
-        const { data, error } = await supabase
-          .from("wiki_pages")
-          .insert({
-            user_id: capture.user_id,
-            title: draft.wikiTitle || source.title,
-            slug: `${slug}-${source.id.slice(0, 8)}`,
-            content_markdown: draft.wikiMarkdown,
-            status: "draft",
-          })
-          .select()
-          .single();
+        const result = await query<WikiPage>(
+          `
+            insert into wiki_pages (user_id, title, slug, content_markdown, status)
+            values ($1, $2, $3, $4, 'draft')
+            returning *
+          `,
+          [
+            capture.user_id,
+            draft.wikiTitle || source.title,
+            `${slug}-${source.id.slice(0, 8)}`,
+            draft.wikiMarkdown,
+          ],
+        );
 
-        if (error) {
-          throw new Error(error.message);
-        }
-
-        return data;
+        return result.rows[0];
       });
 
       await step.run("link source and wiki page", async () => {
-        const { error } = await supabase.from("source_wiki_pages").insert({
-          source_id: source.id,
-          wiki_page_id: wikiPage.id,
-          relation_type: "draft_from_source",
-          confidence: 1,
-        });
-
-        if (error) {
-          throw new Error(error.message);
-        }
+        await query(
+          `
+            insert into source_wiki_pages (source_id, wiki_page_id, relation_type, confidence)
+            values ($1, $2, 'draft_from_source', 1)
+          `,
+          [source.id, wikiPage.id],
+        );
       });
 
       await step.run("create chunks and embeddings", async () => {
@@ -128,19 +125,34 @@ export const processCapture = inngest.createFunction(
           token_count: roughTokenCount(chunk.content),
         }));
 
-        const { error } = await supabase.from("chunks").insert(rows);
-
-        if (error) {
-          throw new Error(error.message);
+        for (const row of rows) {
+          await query(
+            `
+              insert into chunks (user_id, parent_type, parent_id, content, embedding, token_count)
+              values ($1, $2, $3, $4, $5::vector, $6)
+            `,
+            [
+              row.user_id,
+              row.parent_type,
+              row.parent_id,
+              row.content,
+              row.embedding,
+              row.token_count,
+            ],
+          );
         }
       });
 
       await step.run("mark completed", async () => {
-        await supabase.from("captures").update({ status: "completed" }).eq("id", capture.id);
-        await supabase
-          .from("processing_jobs")
-          .update({ status: "completed", finished_at: new Date().toISOString() })
-          .eq("capture_id", capture.id);
+        await query("update captures set status = 'completed' where id = $1", [capture.id]);
+        await query(
+          `
+            update processing_jobs
+            set status = 'completed', finished_at = now()
+            where capture_id = $1
+          `,
+          [capture.id],
+        );
       });
 
       return {
@@ -151,15 +163,15 @@ export const processCapture = inngest.createFunction(
     } catch (error) {
       await step.run("mark failed", async () => {
         const message = error instanceof Error ? error.message : "Unknown processing error";
-        await supabase.from("captures").update({ status: "failed" }).eq("id", capture.id);
-        await supabase
-          .from("processing_jobs")
-          .update({
-            status: "failed",
-            error_message: message,
-            finished_at: new Date().toISOString(),
-          })
-          .eq("capture_id", capture.id);
+        await query("update captures set status = 'failed' where id = $1", [capture.id]);
+        await query(
+          `
+            update processing_jobs
+            set status = 'failed', error_message = $2, finished_at = now()
+            where capture_id = $1
+          `,
+          [capture.id, message],
+        );
       });
 
       throw error;

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { inngest } from "@/lib/inngest/client";
-import { createServiceClient } from "@/lib/supabase/server";
+import { query } from "@/lib/db";
 import { getServerEnv, MissingEnvError } from "@/lib/env";
+import type { Capture } from "@/types/database";
 
 const createCaptureSchema = z
   .object({
@@ -18,36 +19,25 @@ export async function POST(request: Request) {
   try {
     const body = createCaptureSchema.parse(await request.json());
     const env = getServerEnv();
-    const supabase = createServiceClient();
     const type = body.url ? "link" : "text";
 
-    const { data: capture, error: captureError } = await supabase
-      .from("captures")
-      .insert({
-        user_id: env.SIFT_SINGLE_USER_ID,
-        type,
-        raw_url: body.url || null,
-        raw_text: body.text || null,
-        note: body.note || null,
-        status: "queued",
-      })
-      .select()
-      .single();
+    const captureResult = await query<Capture>(
+      `
+        insert into captures (user_id, type, raw_url, raw_text, note, status)
+        values ($1, $2, $3, $4, $5, 'queued')
+        returning *
+      `,
+      [env.SIFT_SINGLE_USER_ID, type, body.url || null, body.text || null, body.note || null],
+    );
+    const capture = captureResult.rows[0];
 
-    if (captureError) {
-      return NextResponse.json({ error: captureError.message }, { status: 500 });
-    }
-
-    const { error: jobError } = await supabase.from("processing_jobs").insert({
-      capture_id: capture.id,
-      user_id: env.SIFT_SINGLE_USER_ID,
-      job_type: "process_capture",
-      status: "queued",
-    });
-
-    if (jobError) {
-      return NextResponse.json({ error: jobError.message }, { status: 500 });
-    }
+    await query(
+      `
+        insert into processing_jobs (capture_id, user_id, job_type, status)
+        values ($1, $2, 'process_capture', 'queued')
+      `,
+      [capture.id, env.SIFT_SINGLE_USER_ID],
+    );
 
     await inngest.send({
       name: "capture/process.requested",

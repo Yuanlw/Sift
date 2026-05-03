@@ -29,9 +29,26 @@ Prototype / Validated MVP：
 - 文件存储：Supabase Storage 或 S3
 - 认证：Prototype 暂时单用户，Validated MVP 使用 Supabase Auth 或 Clerk
 - 网页正文提取：Readability 类库
-- OCR：OpenAI Vision 起步
-- AI：OpenAI API
-- 部署：Vercel + Supabase
+- OCR：先预留，后续接本地视觉模型或云模型
+- AI：模型提供商抽象层，Phase 0 使用 OpenAI-compatible 本地模型
+- 本地开发：Docker Postgres + pgvector
+- 部署：Vercel/Node 服务 + Postgres，可替换为 Supabase/Neon/RDS
+
+## 可替换基础设施
+
+Sift 不应该绑定 Supabase 或 OpenAI。
+
+数据库只依赖 Postgres + pgvector：
+
+- 本地：Docker `pgvector/pgvector`
+- 云端：Supabase、Neon、RDS、Railway、Render Postgres
+
+模型只依赖 provider adapter：
+
+- Phase 0：OpenAI-compatible endpoint，例如 `http://127.0.0.1:9000/v1`
+- 后续：OpenAI、Anthropic、Gemini、DeepSeek、Moonshot、Ollama、LM Studio、MLX 服务等
+
+核心代码只调用 Sift 自己的模型接口，不直接散落调用具体厂商 SDK。
 
 ## 核心模块
 
@@ -180,4 +197,3 @@ Beta：
 - 片段级引用
 - 混合搜索：全文搜索 + 向量搜索
 - 相似页面推荐
-

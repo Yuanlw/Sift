@@ -1,4 +1,5 @@
 create extension if not exists vector;
+create extension if not exists pgcrypto;
 
 create type capture_type as enum ('link', 'text', 'image');
 create type capture_status as enum ('queued', 'processing', 'completed', 'failed');
