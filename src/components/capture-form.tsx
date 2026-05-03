@@ -25,7 +25,11 @@ export function CaptureForm() {
     });
 
     if (!response.ok) {
-      setStatus("保存失败，请检查输入。");
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string; missingKeys?: string[] }
+        | null;
+      const missingKeys = result?.missingKeys?.join(", ");
+      setStatus(missingKeys ? `${result?.error} 缺少：${missingKeys}` : result?.error || "保存失败。");
       return;
     }
 

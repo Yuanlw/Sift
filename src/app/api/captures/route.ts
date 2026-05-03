@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { inngest } from "@/lib/inngest/client";
 import { createServiceClient } from "@/lib/supabase/server";
-import { getServerEnv } from "@/lib/env";
+import { getServerEnv, MissingEnvError } from "@/lib/env";
 
 const createCaptureSchema = z
   .object({
@@ -15,45 +15,64 @@ const createCaptureSchema = z
   });
 
 export async function POST(request: Request) {
-  const body = createCaptureSchema.parse(await request.json());
-  const env = getServerEnv();
-  const supabase = createServiceClient();
-  const type = body.url ? "link" : "text";
+  try {
+    const body = createCaptureSchema.parse(await request.json());
+    const env = getServerEnv();
+    const supabase = createServiceClient();
+    const type = body.url ? "link" : "text";
 
-  const { data: capture, error: captureError } = await supabase
-    .from("captures")
-    .insert({
+    const { data: capture, error: captureError } = await supabase
+      .from("captures")
+      .insert({
+        user_id: env.SIFT_SINGLE_USER_ID,
+        type,
+        raw_url: body.url || null,
+        raw_text: body.text || null,
+        note: body.note || null,
+        status: "queued",
+      })
+      .select()
+      .single();
+
+    if (captureError) {
+      return NextResponse.json({ error: captureError.message }, { status: 500 });
+    }
+
+    const { error: jobError } = await supabase.from("processing_jobs").insert({
+      capture_id: capture.id,
       user_id: env.SIFT_SINGLE_USER_ID,
-      type,
-      raw_url: body.url || null,
-      raw_text: body.text || null,
-      note: body.note || null,
+      job_type: "process_capture",
       status: "queued",
-    })
-    .select()
-    .single();
+    });
 
-  if (captureError) {
-    return NextResponse.json({ error: captureError.message }, { status: 500 });
+    if (jobError) {
+      return NextResponse.json({ error: jobError.message }, { status: 500 });
+    }
+
+    await inngest.send({
+      name: "capture/process.requested",
+      data: {
+        captureId: capture.id,
+      },
+    });
+
+    return NextResponse.json({ capture });
+  } catch (error) {
+    if (error instanceof MissingEnvError) {
+      return NextResponse.json(
+        {
+          error: "Sift 还没有完成本地环境配置。",
+          missingKeys: error.missingKeys,
+        },
+        { status: 503 },
+      );
+    }
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.issues[0]?.message || "Invalid input" }, { status: 400 });
+    }
+
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const { error: jobError } = await supabase.from("processing_jobs").insert({
-    capture_id: capture.id,
-    user_id: env.SIFT_SINGLE_USER_ID,
-    job_type: "process_capture",
-    status: "queued",
-  });
-
-  if (jobError) {
-    return NextResponse.json({ error: jobError.message }, { status: 500 });
-  }
-
-  await inngest.send({
-    name: "capture/process.requested",
-    data: {
-      captureId: capture.id,
-    },
-  });
-
-  return NextResponse.json({ capture });
 }
