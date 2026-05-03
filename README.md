@@ -74,6 +74,7 @@ Phase 0 默认使用：
 - [架构草图](docs/architecture.md)
 - [数据模型](docs/data-model.md)
 - [本地启动](docs/local-setup.md)
+- [部署方式](docs/deployment.md)
 - [Phase 0 可执行计划](docs/phase-0-plan.md)
 - [知识库规则](prompts/wiki-maintenance.md)
 - [资料摄入提示词](prompts/ingestion.md)

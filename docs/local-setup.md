@@ -36,6 +36,17 @@ cp .env.example .env.local
 
 Phase 0 使用 hardcoded 单用户，`SIFT_SINGLE_USER_ID` 可以先保留默认值。
 
+## 启动方式
+
+Sift 支持几种运行方式：
+
+- Docker Compose 全量启动：App + Postgres + pgvector
+- 本机开发：本机跑 Next.js，Docker 只跑数据库
+- 完全本机：自己安装 Postgres + pgvector
+- 云部署：App 和数据库分别托管
+
+完整说明见 [部署方式](deployment.md)。
+
 ## 数据库
 
 本地优先使用 Docker 启动 Postgres + pgvector：

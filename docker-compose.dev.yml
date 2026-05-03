@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: sift-postgres-dev
+    environment:
+      POSTGRES_DB: sift
+      POSTGRES_USER: sift
+      POSTGRES_PASSWORD: sift
+    ports:
+      - "5432:5432"
+    volumes:
+      - sift_postgres_dev_data:/var/lib/postgresql/data
+      - ./supabase/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sift -d sift"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sift_postgres_dev_data:

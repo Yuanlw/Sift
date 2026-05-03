@@ -1,0 +1,123 @@
+# 部署方式
+
+Sift 应该支持多种部署和使用方式。Docker 是最方便的一种，但不是唯一方式。
+
+## 方式一：Docker Compose 全量启动
+
+适合想最快跑起来的人。
+
+包含：
+
+- Sift Web App
+- Postgres
+- pgvector
+- 初始化 schema
+
+前置条件：
+
+- Docker Desktop
+- 本地或远程 OpenAI-compatible 模型服务
+
+步骤：
+
+```bash
+cp .env.docker.example .env
+docker compose up -d --build
+```
+
+访问：
+
+```text
+http://127.0.0.1:3000
+```
+
+默认情况下，容器内的 Sift 会通过下面地址访问宿主机上的本地模型服务：
+
+```text
+http://host.docker.internal:9000/v1
+```
+
+如果模型服务也在 Docker 网络里，可以把 `MODEL_BASE_URL` 改成对应服务名。
+
+## 方式二：本机开发 + Docker 数据库
+
+适合开发 Sift 本身。
+
+包含：
+
+- 本机运行 Next.js
+- Docker 只运行 Postgres + pgvector
+
+步骤：
+
+```bash
+npm install
+cp .env.example .env.local
+npm run db:up
+npm run dev
+```
+
+默认数据库连接：
+
+```text
+DATABASE_URL=postgres://sift:sift@localhost:5432/sift
+```
+
+访问：
+
+```text
+http://127.0.0.1:3000
+```
+
+## 方式三：完全本机运行
+
+适合已经在本机安装 Postgres 和 pgvector 的用户。
+
+步骤：
+
+1. 创建数据库。
+2. 执行 `supabase/schema.sql`。
+3. 在 `.env.local` 中填写自己的 `DATABASE_URL`。
+4. 执行 `npm run dev`。
+
+这种方式不依赖 Docker。
+
+## 方式四：云部署
+
+适合未来 Beta 或生产环境。
+
+可选组合：
+
+- App：Vercel、Railway、Render、Fly.io、Node 服务器
+- Database：Supabase、Neon、RDS、Railway Postgres、Render Postgres
+- Model：OpenAI、Anthropic、Gemini、DeepSeek、Moonshot、本地模型网关
+
+要求：
+
+- 数据库兼容 Postgres + pgvector。
+- 执行同一份 schema。
+- 模型 provider 提供 Sift adapter 支持的接口。
+
+## 模型部署原则
+
+Sift 核心代码不直接绑定具体模型厂商。
+
+当前 Phase 0 支持：
+
+```text
+MODEL_PROVIDER=openai-compatible
+MODEL_BASE_URL=http://127.0.0.1:9000/v1
+```
+
+未来增加：
+
+- `openai`
+- `anthropic`
+- `gemini`
+- `deepseek`
+- `ollama`
+- `lmstudio`
+- `mlx`
+
+不同 provider 只应该影响 adapter，不应该影响业务逻辑。
+
