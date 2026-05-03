@@ -60,5 +60,7 @@ MVP 包含：
 - [用户故事](docs/user-stories.md)
 - [架构草图](docs/architecture.md)
 - [数据模型](docs/data-model.md)
+- [本地启动](docs/local-setup.md)
+- [Phase 0 可执行计划](docs/phase-0-plan.md)
 - [知识库规则](prompts/wiki-maintenance.md)
 - [资料摄入提示词](prompts/ingestion.md)
