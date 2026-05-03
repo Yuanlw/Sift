@@ -59,6 +59,6 @@ MVP 包含：
 - [MVP 范围](docs/mvp.md)
 - [用户故事](docs/user-stories.md)
 - [架构草图](docs/architecture.md)
+- [数据模型](docs/data-model.md)
 - [知识库规则](prompts/wiki-maintenance.md)
 - [资料摄入提示词](prompts/ingestion.md)
-
