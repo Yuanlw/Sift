@@ -17,7 +17,7 @@ export async function generateKnowledgeDraft(input: {
   const prompt = [
     "你是 Sift 的知识库维护助手。",
     "请把输入资料整理成可追溯的 Source 摘要和一篇 draft WikiPage。",
-    "只输出 JSON，不要输出 Markdown 代码块。",
+    "只输出一个 JSON 对象，不要输出 Markdown 代码块，不要在 JSON 前后添加任何解释。",
     "",
     "JSON 字段：title, summary, wikiTitle, wikiMarkdown。",
     "",
@@ -40,7 +40,7 @@ export async function generateKnowledgeDraft(input: {
     responseFormat: "json_object",
   });
 
-  return JSON.parse(stripJsonFence(content)) as KnowledgeDraft;
+  return JSON.parse(extractJsonObject(content)) as KnowledgeDraft;
 }
 
 export async function embedTexts(texts: string[]) {
@@ -105,10 +105,65 @@ async function createChatCompletion(input: {
   return content;
 }
 
-function stripJsonFence(input: string) {
-  return input
+function extractJsonObject(input: string) {
+  const unfenced = input
     .trim()
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "");
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    JSON.parse(unfenced);
+    return unfenced;
+  } catch {
+    // Some local models obey JSON mode loosely and append notes after the object.
+  }
+
+  const start = unfenced.indexOf("{");
+
+  if (start === -1) {
+    throw new Error(`Model response did not include a JSON object: ${unfenced.slice(0, 240)}`);
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < unfenced.length; index += 1) {
+    const char = unfenced[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return unfenced.slice(start, index + 1);
+      }
+    }
+  }
+
+  throw new Error(`Model response JSON object was incomplete: ${unfenced.slice(0, 240)}`);
 }
