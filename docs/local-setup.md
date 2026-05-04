@@ -16,6 +16,8 @@ npm install
 
 ## 环境变量
 
+本机开发和本机测试以 `.env.local` 为准。`npm run dev`、`npm run build`、`npm run start` 会按 Next.js 规则加载 `.env.local`；`npm run smoke:agent` 也会主动加载同一份配置。
+
 复制环境变量模板：
 
 ```bash
@@ -29,6 +31,8 @@ cp .env.example .env.local
 - `MODEL_BASE_URL`
 - `MODEL_API_KEY`
 - `MODEL_TEXT_MODEL`
+- `MODEL_TEXT_THINKING`
+- `MODEL_TEXT_REASONING_EFFORT`
 - `MODEL_EMBEDDING_MODEL`
 - `MODEL_EMBEDDING_DIMENSIONS`
 - `MODEL_VISION_BASE_URL`
@@ -49,6 +53,13 @@ Phase 0 使用 hardcoded 单用户，`SIFT_SINGLE_USER_ID` 可以先保留默认
 `MODEL_VISION_*` 是图片 OCR 使用的 OpenAI-compatible 视觉模型配置。留空时会复用文本模型配置；如果文本模型不支持图片输入，图片会保存原始附件并降级为 fallback。上传文件会保存在私有 `.data/uploads/captures` 目录，通过授权 API 读取；当前只支持图片文件，单张 10MB，一次最多 6 张。
 
 `SIFT_TRUST_USER_HEADER=false` 时保持单用户模式。只有在反向代理或网关已经完成认证时，才建议改成 `true`，此时 Sift 会从 `SIFT_USER_ID_HEADER` 指定的请求头读取用户 UUID。
+
+配置文件用途：
+
+- `.env.local`：本机开发和本机测试的真实配置，优先维护这一份。
+- `.env.example`：给 `.env.local` 用的模板，不放真实密钥。
+- `.env`：Docker Compose 全量启动时读取。
+- `.env.docker.example`：给 `.env` 用的模板，容器内地址可能和 `.env.local` 不同。
 
 ## 启动方式
 

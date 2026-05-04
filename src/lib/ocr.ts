@@ -15,6 +15,16 @@ interface VisionContent {
   };
 }
 
+type ChatContent =
+  | string
+  | Array<{
+      type?: string;
+      text?: string;
+      content?: string;
+    }>
+  | null
+  | undefined;
+
 export async function extractTextFromImages(input: { fileUrl?: string | null; attachments: RawAttachment[] }) {
   const imageAttachments = collectImageAttachments(input);
 
@@ -26,14 +36,7 @@ export async function extractTextFromImages(input: { fileUrl?: string | null; at
   const content: VisionContent[] = [
     {
       type: "text",
-      text: [
-        "请对这些图片做 OCR，尽量还原图片中的文字结构。",
-        "要求：",
-        "- 保留标题、段落、列表、表格的可读结构。",
-        "- 不要编造图片中没有的文字。",
-        "- 如果图片没有可识别文字，请明确说明。",
-        "- 只输出提取出的文字，不要输出额外解释。",
-      ].join("\n"),
+      text: "请做 OCR，只输出图片里的文字。",
     },
     ...imageContents,
   ];
@@ -63,9 +66,9 @@ export async function extractTextFromImages(input: { fileUrl?: string | null; at
   }
 
   const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: { content?: ChatContent; reasoning_content?: string | null } }>;
   };
-  const text = data.choices?.[0]?.message?.content?.trim();
+  const text = extractOcrText(data);
 
   if (!text) {
     throw new Error("Vision OCR response did not include text content.");
@@ -75,6 +78,32 @@ export async function extractTextFromImages(input: { fileUrl?: string | null; at
     text,
     imageCount: imageAttachments.length,
   };
+}
+
+function extractOcrText(data: { choices?: Array<{ message?: { content?: ChatContent; reasoning_content?: string | null } }> }) {
+  const message = data.choices?.[0]?.message;
+  const contentText = normalizeChatContent(message?.content);
+  const reasoningText = normalizeChatContent(message?.reasoning_content);
+  return (contentText || reasoningText)?.trim() || null;
+}
+
+function normalizeChatContent(content: ChatContent) {
+  if (!content) {
+    return "";
+  }
+
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => part.text || part.content || "")
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return "";
 }
 
 function collectImageAttachments(input: { fileUrl?: string | null; attachments: RawAttachment[] }) {

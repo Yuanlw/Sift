@@ -1,6 +1,17 @@
+import { randomUUID } from "crypto";
+import { unlink } from "fs/promises";
+import path from "path";
+import pg from "pg";
+import nextEnv from "@next/env";
+import { deflateSync } from "zlib";
+
+const { Client } = pg;
+const { loadEnvConfig } = nextEnv;
+loadEnvConfig(process.cwd());
+
 const baseUrl = trimTrailingSlash(process.env.SIFT_BASE_URL || "http://localhost:3000");
 const agentApiKey = process.env.SIFT_AGENT_API_KEY || "";
-
+const marker = `codex-smoke-${Date.now()}-${randomUUID().slice(0, 8)}`;
 const headers = {
   "Content-Type": "application/json",
 };
@@ -9,13 +20,46 @@ if (agentApiKey) {
   headers.Authorization = `Bearer ${agentApiKey}`;
 }
 
-await assertServerReachable();
-await assertMcpInitialize();
-await assertMcpToolsList();
-await assertMcpResourceTemplatesList();
-await assertAgentQueryValidation();
+const client = new Client({ connectionString: process.env.DATABASE_URL });
+const cleanupState = {
+  captureIds: new Set(),
+  uploadUrls: new Set(),
+};
 
-console.log("Agent API smoke checks passed.");
+const FONT = {
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+  "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+  "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+  "6": ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
+  "C": ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  "D": ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  "E": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  "F": ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  "I": ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  "K": ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  "M": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  "O": ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  "P": ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  "R": ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  "S": ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  "T": ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+};
+
+try {
+  await client.connect();
+  await assertServerReachable();
+  await assertMcpInitialize();
+  await assertMcpToolsList();
+  await assertMcpResourceTemplatesList();
+  await assertAgentQueryValidation();
+  await assertCaptureFirstE2e();
+  console.log("Agent API smoke checks passed.");
+} finally {
+  await cleanupSmokeData().catch((error) => {
+    console.warn(`Smoke cleanup warning: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  await client.end().catch(() => undefined);
+}
 
 async function assertServerReachable() {
   try {
@@ -91,8 +135,227 @@ async function assertAgentQueryValidation() {
   assert(typeof body.error === "string", "Agent query validation should return an error message", body);
 }
 
-async function postJson(path, payload) {
-  return fetch(`${baseUrl}${path}`, {
+async function assertCaptureFirstE2e() {
+  const textCaptureId = await createTextCapture();
+  const imageCaptureId = await createImageCapture();
+  const rows = await waitForCaptureCompletion([textCaptureId, imageCaptureId]);
+  const textRow = rows.find((row) => row.capture_id === textCaptureId);
+  const imageRow = rows.find((row) => row.capture_id === imageCaptureId);
+
+  assert(textRow?.capture_status === "completed", "Text capture should complete processing", textRow);
+  assert(textRow?.source_id, "Text capture should create a Source", textRow);
+  assert(textRow?.wiki_id, "Text capture should create a WikiPage", textRow);
+  assert(imageRow?.capture_status === "completed", "Image capture should complete processing", imageRow);
+  assert(imageRow?.extraction_method === "vision_ocr", "Image capture should use vision OCR", imageRow);
+  assert(/SIFT|OCR|SMOKE|2026/i.test(imageRow?.extracted_text || ""), "OCR text should include smoke image text", imageRow);
+
+  const chineseSlug = `中文-smoke-${marker.slice(-8)}`;
+  await client.query("update wiki_pages set slug = $1 where id = $2", [chineseSlug, textRow.wiki_id]);
+
+  const wikiResponse = await fetch(`${baseUrl}/wiki/${encodeURIComponent(chineseSlug)}`);
+  const wikiHtml = await wikiResponse.text();
+  assert(wikiResponse.ok, "Encoded Chinese wiki slug should render a Wiki page", {
+    status: wikiResponse.status,
+    snippet: wikiHtml.slice(0, 240),
+  });
+
+  const wikiAskResponse = await postJson(`/api/wiki/${encodeURIComponent(chineseSlug)}/ask`, {
+    question: "这页主要说什么？",
+  });
+  const wikiAskBody = await readJson(wikiAskResponse);
+  assert(wikiAskResponse.ok, "Wiki Ask should support encoded Chinese slugs", wikiAskBody);
+  assert(wikiAskBody.answer, "Wiki Ask should return an answer", wikiAskBody);
+
+  const askResponse = await postJson("/api/ask", {
+    question: "SIFT OCR SMOKE 2026",
+  });
+  const askBody = await readJson(askResponse);
+  assert(askResponse.ok, "Global Ask should return 2xx for OCR content", askBody);
+  assert((askBody.retrieval?.contexts || []).length > 0, "Global Ask should retrieve OCR contexts", askBody);
+
+  const agentResponse = await postJson("/api/agent/query", {
+    query: "SIFT OCR SMOKE 2026",
+    limit: 5,
+  });
+  const agentBody = await readJson(agentResponse);
+  assert(agentResponse.ok, "Agent Query should return 2xx for OCR content", agentBody);
+  assert((agentBody.contexts || []).length > 0, "Agent Query should return OCR contexts", agentBody);
+}
+
+async function createTextCapture() {
+  const response = await postJson("/api/captures", {
+    text: [
+      `中文 Smoke 测试 ${marker}`,
+      "Sift should save raw input first, process it in the background, and create a traceable wiki page.",
+    ].join("\n"),
+    note: `${marker}-text`,
+  });
+  const body = await readJson(response);
+  const captureId = body.capture?.id;
+
+  assert(response.status === 201, "Text capture should return 201", body);
+  assert(captureId, "Text capture should return capture id", body);
+  cleanupState.captureIds.add(captureId);
+  return captureId;
+}
+
+async function createImageCapture() {
+  const formData = new FormData();
+  formData.append("note", `${marker}-ocr`);
+  formData.append("files", new Blob([createSmokePng()], { type: "image/png" }), "sift-ocr-smoke.png");
+
+  const response = await fetch(`${baseUrl}/api/captures`, {
+    method: "POST",
+    body: formData,
+  });
+  const body = await readJson(response);
+  const captureId = body.capture?.id;
+
+  assert(response.status === 201, "Image capture should return 201", body);
+  assert(captureId, "Image capture should return capture id", body);
+  cleanupState.captureIds.add(captureId);
+
+  for (const attachment of body.capture?.raw_attachments || []) {
+    if (attachment.url) {
+      cleanupState.uploadUrls.add(attachment.url);
+    }
+  }
+
+  return captureId;
+}
+
+async function waitForCaptureCompletion(captureIds) {
+  const deadline = Date.now() + Number(process.env.SIFT_SMOKE_TIMEOUT_MS || 120000);
+  let lastRows = [];
+
+  while (Date.now() < deadline) {
+    lastRows = await loadCaptureRows(captureIds);
+
+    if (lastRows.length === captureIds.length && lastRows.every((row) => row.job_status === "completed")) {
+      return lastRows;
+    }
+
+    const failed = lastRows.find((row) => row.job_status === "failed" || row.capture_status === "failed");
+
+    if (failed) {
+      throw new Error(`Capture processing failed: ${JSON.stringify(failed, null, 2)}`);
+    }
+
+    await sleep(1500);
+  }
+
+  throw new Error(`Timed out waiting for capture processing.\nLast rows: ${JSON.stringify(lastRows, null, 2)}`);
+}
+
+async function loadCaptureRows(captureIds) {
+  const result = await client.query(
+    `
+      select
+        c.id as capture_id,
+        c.status::text as capture_status,
+        c.raw_attachments,
+        p.status::text as job_status,
+        p.current_step,
+        p.error_message as job_error,
+        ec.extraction_method,
+        ec.content_text as extracted_text,
+        ec.error_message as extraction_error,
+        s.id as source_id,
+        wp.id as wiki_id,
+        wp.slug as wiki_slug
+      from captures c
+      left join processing_jobs p on p.capture_id = c.id
+      left join extracted_contents ec on ec.capture_id = c.id
+      left join sources s on s.capture_id = c.id
+      left join source_wiki_pages swp on swp.source_id = s.id
+      left join wiki_pages wp on wp.id = swp.wiki_page_id
+      where c.id = any($1::uuid[])
+      order by c.created_at
+    `,
+    [captureIds],
+  );
+
+  for (const row of result.rows) {
+    for (const attachment of row.raw_attachments || []) {
+      if (attachment.url) {
+        cleanupState.uploadUrls.add(attachment.url);
+      }
+    }
+  }
+
+  return result.rows;
+}
+
+async function cleanupSmokeData() {
+  const captureIds = Array.from(cleanupState.captureIds);
+
+  if (captureIds.length > 0) {
+    const targetWikiIds = await loadTargetWikiIds(captureIds);
+
+    await client.query(
+      `
+        with target_sources as (
+          select id from sources where capture_id = any($1::uuid[])
+        )
+        delete from chunks
+        where (parent_type = 'source' and parent_id in (select id from target_sources))
+           or (parent_type = 'wiki_page' and parent_id = any($2::uuid[]))
+      `,
+      [captureIds, targetWikiIds],
+    );
+    await client.query(
+      `
+        with target_wikis as (
+          select unnest($2::uuid[]) as id
+        )
+        delete from audit_logs
+        where resource_id in (
+          select id::text from captures where id = any($1::uuid[])
+          union select id::text from sources where capture_id = any($1::uuid[])
+          union select id::text from target_wikis
+        )
+      `,
+      [captureIds, targetWikiIds],
+    );
+    await client.query("delete from captures where id = any($1::uuid[])", [captureIds]);
+
+    if (targetWikiIds.length > 0) {
+      await client.query("delete from wiki_pages where id = any($1::uuid[])", [targetWikiIds]);
+    }
+  }
+
+  await cleanupUploads();
+}
+
+async function loadTargetWikiIds(captureIds) {
+  const result = await client.query(
+    `
+      select distinct wp.id
+      from sources s
+      join source_wiki_pages swp on swp.source_id = s.id
+      join wiki_pages wp on wp.id = swp.wiki_page_id
+      where s.capture_id = any($1::uuid[])
+    `,
+    [captureIds],
+  );
+
+  return result.rows.map((row) => row.id);
+}
+
+async function cleanupUploads() {
+  for (const url of cleanupState.uploadUrls) {
+    const filename = getCaptureUploadFilename(url);
+
+    if (!filename) {
+      continue;
+    }
+
+    await unlink(path.join(process.cwd(), ".data", "uploads", "captures", filename)).catch(() => undefined);
+  }
+}
+
+async function postJson(route, payload) {
+  return fetch(`${baseUrl}${route}`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
@@ -118,6 +381,107 @@ function assert(condition, message, body) {
 
   const details = body ? `\nResponse: ${JSON.stringify(body, null, 2)}` : "";
   throw new Error(`${message}${details}`);
+}
+
+function createSmokePng() {
+  const scale = 14;
+  const margin = 36;
+  const lines = ["SIFT OCR SMOKE 2026", "DEEPSEEK OCR"];
+  const charWidth = 5 * scale;
+  const charGap = scale;
+  const lineHeight = 7 * scale;
+  const lineGap = 28;
+  const width = Math.max(...lines.map((line) => line.length * charWidth + (line.length - 1) * charGap)) + margin * 2;
+  const height = lines.length * lineHeight + (lines.length - 1) * lineGap + margin * 2;
+  const pixels = Buffer.alloc(width * height * 3, 255);
+
+  lines.forEach((line, lineIndex) => {
+    let x = margin;
+    const y = margin + lineIndex * (lineHeight + lineGap);
+
+    for (const char of line) {
+      drawChar(pixels, width, x, y, char, scale);
+      x += charWidth + charGap;
+    }
+  });
+
+  const raw = Buffer.alloc((width * 3 + 1) * height);
+
+  for (let y = 0; y < height; y += 1) {
+    const rawOffset = y * (width * 3 + 1);
+    raw[rawOffset] = 0;
+    pixels.copy(raw, rawOffset + 1, y * width * 3, (y + 1) * width * 3);
+  }
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", Buffer.concat([uint32(width), uint32(height), Buffer.from([8, 2, 0, 0, 0])])),
+    pngChunk("IDAT", deflateSync(raw)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function drawChar(pixels, width, x, y, char, scale) {
+  const glyph = FONT[char] || FONT[" "];
+
+  glyph.forEach((row, rowIndex) => {
+    [...row].forEach((value, columnIndex) => {
+      if (value !== "1") {
+        return;
+      }
+
+      for (let dy = 0; dy < scale; dy += 1) {
+        for (let dx = 0; dx < scale; dx += 1) {
+          const offset = ((y + rowIndex * scale + dy) * width + x + columnIndex * scale + dx) * 3;
+          pixels[offset] = 0;
+          pixels[offset + 1] = 0;
+          pixels[offset + 2] = 0;
+        }
+      }
+    });
+  });
+}
+
+function pngChunk(type, data) {
+  const typeBuffer = Buffer.from(type);
+  return Buffer.concat([uint32(data.length), typeBuffer, data, uint32(crc32(Buffer.concat([typeBuffer, data])))]);
+}
+
+function uint32(value) {
+  const buffer = Buffer.alloc(4);
+  buffer.writeUInt32BE(value >>> 0);
+  return buffer;
+}
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+
+  for (const byte of buffer) {
+    crc ^= byte;
+
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    }
+  }
+
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function getCaptureUploadFilename(url) {
+  const prefix = "/api/uploads/captures/";
+
+  if (!url.startsWith(prefix)) {
+    return null;
+  }
+
+  const filename = url.slice(prefix.length);
+  return /^\d{4}-\d{2}-\d{2}-[0-9a-f-]{36}\.(png|jpg|jpeg|webp|gif|bmp|avif)$/i.test(filename)
+    ? filename
+    : null;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function trimTrailingSlash(value) {

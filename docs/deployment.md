@@ -25,6 +25,8 @@ cp .env.docker.example .env
 docker compose up -d --build
 ```
 
+Docker Compose 默认读取 `.env`，不会读取 `.env.local`。因此全量 Docker 启动时以 `.env` 为准；本机开发和本机 smoke 测试时以 `.env.local` 为准。
+
 访问：
 
 ```text
@@ -68,6 +70,8 @@ cp .env.example .env.local
 npm run db:up
 npm run dev
 ```
+
+这种方式下 Next.js 和 `npm run smoke:agent` 都读取 `.env.local`。
 
 默认数据库连接：
 

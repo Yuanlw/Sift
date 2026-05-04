@@ -77,7 +77,7 @@ export default async function WikiPage() {
       ) : pages.length > 0 ? (
         <div className="list">
           {pages.map((page) => (
-            <Link className="item item-link" href={`/wiki/${page.slug}`} key={page.id}>
+            <Link className="item item-link" href={`/wiki/${encodeURIComponent(page.slug)}`} key={page.id}>
               <div className="item-header">
                 <span className={`status-dot status-${page.status}`}>{getWikiStatusLabel(page.status, locale)}</span>
                 <strong>{page.title}</strong>

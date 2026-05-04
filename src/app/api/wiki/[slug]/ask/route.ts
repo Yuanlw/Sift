@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { query } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
 import { answerWikiQuestion } from "@/lib/models";
+import { safeDecodeRouteParam } from "@/lib/route-params";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 const askSchema = z.object({
@@ -50,7 +51,13 @@ export async function POST(request: Request, { params }: { params: { slug: strin
   try {
     const body = askSchema.parse(await request.json());
     const userContext = getUserContextFromRequest(request);
-    const rows = await loadWikiContext(params.slug, userContext.userId);
+    const slug = safeDecodeRouteParam(params.slug);
+
+    if (!slug) {
+      return NextResponse.json({ error: "Invalid wiki slug." }, { status: 400 });
+    }
+
+    const rows = await loadWikiContext(slug, userContext.userId);
     const first = rows[0];
 
     if (!first) {
@@ -58,7 +65,7 @@ export async function POST(request: Request, { params }: { params: { slug: strin
         userId: userContext.userId,
         action: "ask.wiki",
         resourceType: "wiki_page",
-        resourceId: params.slug,
+        resourceId: slug,
         status: "denied",
         request,
       });
@@ -88,7 +95,7 @@ export async function POST(request: Request, { params }: { params: { slug: strin
       userId: userContext.userId,
       action: "ask.wiki",
       resourceType: "wiki_page",
-      resourceId: params.slug,
+      resourceId: slug,
       status: "success",
       request,
       metadata: {

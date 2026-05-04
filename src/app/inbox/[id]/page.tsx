@@ -166,7 +166,7 @@ export default async function CaptureDetailPage({ params }: { params: { id: stri
             <h3>{localeText(locale, "生成结果", "Artifacts")}</h3>
             <div className="artifact-stack">
               <ArtifactLink href={capture.source_id ? `/sources/${capture.source_id}` : null} label={localeText(locale, "来源", "Source")} locale={locale} title={capture.source_title} />
-              <ArtifactLink href={capture.wiki_slug ? `/wiki/${capture.wiki_slug}` : null} label={localeText(locale, "知识页", "Wiki")} locale={locale} title={capture.wiki_title} />
+              <ArtifactLink href={capture.wiki_slug ? `/wiki/${encodeURIComponent(capture.wiki_slug)}` : null} label={localeText(locale, "知识页", "Wiki")} locale={locale} title={capture.wiki_title} />
             </div>
           </div>
         </aside>

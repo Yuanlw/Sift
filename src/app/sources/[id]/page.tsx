@@ -98,7 +98,7 @@ export default async function SourceDetailPage({ params }: { params: { id: strin
               {localeText(locale, "原始链接", "Original link")}
             </a>
           ) : null}
-          {source.wiki_slug ? <Link href={`/wiki/${source.wiki_slug}`}>{localeText(locale, "查看知识页", "View Wiki")}</Link> : null}
+          {source.wiki_slug ? <Link href={`/wiki/${encodeURIComponent(source.wiki_slug)}`}>{localeText(locale, "查看知识页", "View Wiki")}</Link> : null}
         </div>
       </section>
 

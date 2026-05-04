@@ -8,3 +8,4 @@ coverage
 *.log
 tsconfig.tsbuildinfo
 public/uploads
+.data

@@ -171,7 +171,7 @@ function CitationLink({
   const href = citation.sourceId
     ? `/sources/${citation.sourceId}`
     : citation.wikiSlug
-      ? `/wiki/${citation.wikiSlug}`
+      ? `/wiki/${encodeURIComponent(citation.wikiSlug)}`
       : citation.originalUrl || "";
 
   if (!href) {

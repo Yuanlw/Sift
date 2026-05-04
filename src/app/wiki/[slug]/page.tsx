@@ -4,6 +4,7 @@ import { WikiAskForm } from "@/components/wiki-ask-form";
 import { query } from "@/lib/db";
 import { formatDateTime, getLocale, localeText } from "@/lib/i18n";
 import { loadSimilarWikiPageSuggestions } from "@/lib/reuse-suggestions";
+import { safeDecodeRouteParam } from "@/lib/route-params";
 import { getUserContextFromHeaders } from "@/lib/user-context";
 import type { WikiPageStatus } from "@/types/database";
 
@@ -49,7 +50,13 @@ async function loadWikiPage(slug: string, userId: string) {
 export default async function WikiDetailPage({ params }: { params: { slug: string } }) {
   const locale = getLocale();
   const userContext = getUserContextFromHeaders();
-  const page = await loadWikiPage(params.slug, userContext.userId);
+  const slug = safeDecodeRouteParam(params.slug);
+
+  if (!slug) {
+    notFound();
+  }
+
+  const page = await loadWikiPage(slug, userContext.userId);
 
   if (!page) {
     notFound();
@@ -96,7 +103,7 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
             {similarPages.length > 0 ? (
               <div className="suggestion-list">
                 {similarPages.map((suggestion) => (
-                  <Link className="suggestion-link" href={`/wiki/${suggestion.slug}`} key={suggestion.wikiPageId}>
+                  <Link className="suggestion-link" href={`/wiki/${encodeURIComponent(suggestion.slug)}`} key={suggestion.wikiPageId}>
                     <strong>{suggestion.title}</strong>
                     <span className="meta">
                       {Math.round(suggestion.score * 100)}% · {suggestion.reasons.join(" / ")}

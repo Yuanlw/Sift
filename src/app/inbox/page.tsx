@@ -148,7 +148,7 @@ export default async function InboxPage() {
                     title={capture.source_title}
                   />
                   <ArtifactState
-                    href={capture.wiki_slug ? `/wiki/${capture.wiki_slug}` : null}
+                    href={capture.wiki_slug ? `/wiki/${encodeURIComponent(capture.wiki_slug)}` : null}
                     label={localeText(locale, "知识页", "Wiki")}
                     locale={locale}
                     title={capture.wiki_title}
