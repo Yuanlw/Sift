@@ -39,24 +39,25 @@ Prototype / Validated MVP：
 - 文件存储：Supabase Storage 或 S3
 - 认证：Prototype 暂时单用户，Validated MVP 使用 Supabase Auth 或 Clerk
 - 网页正文提取：Readability 类库
-- OCR：先预留，后续接本地视觉模型或云模型
-- AI：模型提供商抽象层，Phase 0 使用 OpenAI-compatible 本地模型
+- OCR：接入视觉模型，来源可以是云模型、本地模型或自定义中转站
+- AI：模型提供商抽象层，第一轮先用 OpenAI-compatible 接口跑通
 - 本地开发：Docker Postgres + pgvector
 - 部署：Vercel/Node 服务 + Postgres，可替换为 Supabase/Neon/RDS
 
 ## 可替换基础设施
 
-Sift 不应该绑定 Supabase 或 OpenAI。
+Sift 不应该绑定 Supabase、OpenAI 或任何单一模型厂商。
 
 数据库只依赖 Postgres + pgvector：
 
 - 本地：Docker `pgvector/pgvector`
 - 云端：Supabase、Neon、RDS、Railway、Render Postgres
 
-模型只依赖 provider adapter：
+模型只依赖 provider adapter。业务代码不关心模型来自哪里，只关心 Sift 内部统一接口：
 
-- Phase 0：OpenAI-compatible endpoint，例如 `http://127.0.0.1:9000/v1`
-- 后续：OpenAI、Anthropic、Gemini、DeepSeek、Moonshot、Ollama、LM Studio、MLX 服务等
+- 第一轮：OpenAI-compatible endpoint，例如本地服务、自定义中转站、One API、LiteLLM、vLLM、Ollama、LM Studio、MLX 服务。
+- 后续专用 adapter：OpenAI、Anthropic、Google Gemini、阿里 Qwen、DeepSeek、豆包、智谱 AI、Kimi。
+- 模型角色可拆分：文本生成、embedding、视觉 OCR 可以分别配置，不要求来自同一家厂商。
 
 核心代码只调用 Sift 自己的模型接口，不直接散落调用具体厂商 SDK。
 

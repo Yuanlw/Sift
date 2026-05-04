@@ -5,7 +5,7 @@
 - Node.js 20+
 - npm
 - Docker Desktop
-- 本地 OpenAI-compatible 模型服务，或其他兼容 `/v1/chat/completions` 和 `/v1/embeddings` 的模型服务
+- 云模型、本地模型或自定义中转站模型；第一轮只要求兼容 `/v1/chat/completions` 和 `/v1/embeddings`
 - Inngest 开发环境
 
 ## 安装依赖
@@ -63,7 +63,7 @@ Sift 支持几种运行方式：
 
 ## 数据库
 
-本地优先使用 Docker 启动 Postgres + pgvector：
+本地开发建议使用 Docker 启动 Postgres + pgvector：
 
 ```bash
 npm run db:up
@@ -95,7 +95,7 @@ supabase/schema.sql
 
 ## 模型
 
-Phase 0 不绑定 OpenAI 官方服务。默认使用 OpenAI-compatible API：
+Sift 不以本地模型为唯一方向，也不绑定 OpenAI 官方服务。第一轮默认使用 OpenAI-compatible API，是为了同时兼容本地模型、云模型的中转网关和自定义模型服务：
 
 ```text
 MODEL_BASE_URL=http://127.0.0.1:9000/v1
@@ -105,12 +105,20 @@ MODEL_EMBEDDING_DIMENSIONS=1024
 MODEL_API_KEY=local
 ```
 
-只要本地模型服务提供：
+只要模型服务提供：
 
 - `/v1/chat/completions`
 - `/v1/embeddings`
 
-Sift 就可以先用本地模型跑通。
+Sift 就可以先跑通。这个服务可以是本地服务，也可以是 One API、LiteLLM、vLLM、自建网关，或云模型厂商的 OpenAI-compatible 入口。
+
+后续应提供专用 provider adapter，优先覆盖：
+
+- OpenAI、Anthropic、Google Gemini
+- 阿里 Qwen、DeepSeek、豆包、智谱 AI、Kimi
+- Ollama、LM Studio、MLX、vLLM 等本地模型入口
+
+文本生成、embedding 和视觉 OCR 不要求使用同一家模型。项目内部也应该保留切换空间，方便比较不同模型在提取、总结、问答和 OCR 上的实际效果。
 
 ## 任务派发
 
@@ -185,4 +193,4 @@ npm run smoke:agent
 - 图片可以上传并保存原始附件，OCR 依赖 `MODEL_VISION_*` 指向的视觉模型能力；PDF 和音频暂未开放上传处理。
 - 还没有正式账号系统；当前多用户模式依赖受信任网关传入用户 UUID 请求头。
 - 知识库级问答已有基础版本，但还没有完整的权限、审计和评测体系。
-- 模型层当前先支持 OpenAI-compatible provider，后续再增加 Anthropic、OpenAI、Gemini 等专用 adapter。
+- 模型层当前先支持 OpenAI-compatible provider，后续再增加 OpenAI、Anthropic、Google Gemini、阿里 Qwen、DeepSeek、豆包、智谱 AI、Kimi 等专用 adapter。

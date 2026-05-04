@@ -45,18 +45,24 @@ MVP 包含：
 - 简单知识库浏览
 - 基于个人知识库的问答
 
-## 本地优先
+## 模型可替换
 
 Sift 不绑定 Supabase 或 OpenAI 官方服务。
 
-Phase 0 默认使用：
+第一轮为了降低启动成本，默认使用：
 
 - Docker Postgres + pgvector
-- OpenAI-compatible 本地模型服务
-- 本地文本模型：`Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit`
-- 本地 embedding 模型：`bge-m3-mlx-fp16`
+- OpenAI-compatible 模型接口
+- 示例文本模型：`Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit`
+- 示例 embedding 模型：`bge-m3-mlx-fp16`
 
-未来再通过 provider adapter 支持主流模型厂商。
+这不代表 Sift 以本地模型为主。Sift 的模型层应支持云模型、本地模型和自定义中转站模型，并允许不同任务分别配置文本、embedding 和视觉模型。
+
+优先支持的模型来源：
+
+- 国际云模型：OpenAI、Anthropic、Google Gemini
+- 中国云模型：阿里 Qwen、DeepSeek、豆包、智谱 AI、Kimi
+- 本地或自定义网关：Ollama、LM Studio、MLX、vLLM、One API、LiteLLM 等 OpenAI-compatible 服务
 
 ## 核心原则
 
