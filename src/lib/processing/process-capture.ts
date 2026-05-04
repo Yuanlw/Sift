@@ -1,61 +1,98 @@
 import { chunkText, roughTokenCount } from "@/lib/chunk";
 import { query } from "@/lib/db";
-import { extractCaptureText } from "@/lib/extraction";
-import { embedTexts, generateKnowledgeDraft } from "@/lib/models";
+import { type ExtractedCaptureContent, extractCaptureText } from "@/lib/extraction";
+import { embedTexts, generateKnowledgeDraft, type KnowledgeDraft } from "@/lib/models";
 import { toSlug } from "@/lib/slug";
-import type { Capture, Source, WikiPage } from "@/types/database";
+import { toSqlVector } from "@/lib/vector";
+import type { Capture, ExtractedContent, ProcessingJob, Source, WikiPage } from "@/types/database";
 
 export async function processCaptureById(captureId: string) {
   const capture = await loadCapture(captureId);
+  const job = await ensureProcessingJob(capture);
+  let currentStep = "starting";
 
   await query("update captures set status = 'processing' where id = $1", [capture.id]);
   await query(
     `
       update processing_jobs
-      set status = 'running', started_at = now()
-      where capture_id = $1
+      set status = 'running', current_step = 'starting', started_at = coalesce(started_at, now())
+      where id = $1
     `,
-    [capture.id],
+    [job.id],
   );
 
   try {
-    const extracted = await extractCaptureText(capture);
-    const draft = await generateKnowledgeDraft({
-      title: extracted.title,
-      text: extracted.text,
-      note: capture.note,
-      originalUrl: capture.raw_url,
+    currentStep = capture.raw_url ? "fetch_link" : "extracting";
+    const extracted = await runJobStep(job.id, currentStep, async () => {
+      const result = await extractCaptureText(capture);
+      await saveExtractedContent(capture, result);
+      return result;
     });
 
-    const source = await createSource(capture, {
-      title: draft.title || extracted.title,
-      text: extracted.text,
-      summary: draft.summary,
-      metadata: extracted.metadata,
-    });
-    const wikiPage = await createWikiPage(capture, source, {
-      title: draft.wikiTitle || source.title,
-      markdown: draft.wikiMarkdown,
-    });
-
-    await query(
-      `
-        insert into source_wiki_pages (source_id, wiki_page_id, relation_type, confidence)
-        values ($1, $2, 'draft_from_source', 1)
-      `,
-      [source.id, wikiPage.id],
+    currentStep = "structuring";
+    const draft = await runJobStep(job.id, currentStep, async () =>
+      withTimeout(
+        generateKnowledgeDraft({
+          title: extracted.title,
+          text: extracted.text,
+          note: capture.note,
+          originalUrl: capture.raw_url,
+        }),
+        25000,
+        () => createFallbackDraft(extracted),
+      ).catch(() => createFallbackDraft(extracted)),
     );
 
-    await createChunks(capture, source, wikiPage);
+    currentStep = "create_source";
+    const source = await runJobStep(job.id, currentStep, () =>
+      createSource(capture, {
+        title: draft.title || extracted.title,
+        text: extracted.text,
+        summary: draft.summary,
+        metadata: {
+          ...extracted.metadata,
+          extraction_status: extracted.status,
+          extraction_method: extracted.method,
+          extraction_error: extracted.errorMessage || undefined,
+        },
+      }),
+    );
+
+    currentStep = "create_wiki_page";
+    const wikiPage = await runJobStep(job.id, currentStep, () =>
+      createWikiPage(capture, source, {
+        title: draft.wikiTitle || source.title,
+        markdown: draft.wikiMarkdown,
+      }),
+    );
+
+    await linkSourceToWikiPage(source, wikiPage);
+
+    const chunkInputs = buildChunkInputs(source, wikiPage);
+    let embeddings: number[][] = [];
+
+    currentStep = "create_embeddings";
+    try {
+      embeddings = await runJobStep(job.id, currentStep, () =>
+        withTimeout(embedTexts(chunkInputs.map((chunk) => chunk.content)), 25000, () => []),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown embedding error";
+      await markJobStep(job.id, currentStep, "failed", message);
+      embeddings = [];
+    }
+
+    currentStep = "create_chunks";
+    await runJobStep(job.id, currentStep, () => createChunks(capture, source, wikiPage, chunkInputs, embeddings));
 
     await query("update captures set status = 'completed' where id = $1", [capture.id]);
     await query(
       `
         update processing_jobs
-        set status = 'completed', finished_at = now()
-        where capture_id = $1
+        set status = 'completed', current_step = 'completed', finished_at = now()
+        where id = $1
       `,
-      [capture.id],
+      [job.id],
     );
 
     return {
@@ -69,13 +106,102 @@ export async function processCaptureById(captureId: string) {
     await query(
       `
         update processing_jobs
-        set status = 'failed', error_message = $2, finished_at = now()
-        where capture_id = $1
+        set
+          status = 'failed',
+          current_step = $2,
+          step_status = coalesce(step_status, '{}'::jsonb)
+            || jsonb_build_object($2::text, jsonb_build_object('status', 'failed', 'finished_at', now(), 'error', $3::text)),
+          error_message = $3,
+          finished_at = now()
+        where id = $1
       `,
-      [capture.id, message],
+      [job.id, currentStep, message],
     );
     throw error;
   }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: () => T): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  return Promise.race([
+    promise.finally(() => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }),
+    new Promise<T>((resolve) => {
+      timeout = setTimeout(() => resolve(fallback()), timeoutMs);
+    }),
+  ]);
+}
+
+function createFallbackDraft(extracted: ExtractedCaptureContent): KnowledgeDraft {
+  const statusNote =
+    extracted.status === "fallback"
+      ? "这份资料已先保存原始内容，后续可在 OCR、转写或正文提取能力完善后重新处理。"
+      : "这份资料已完成基础提取，但 AI 结构化整理暂时不可用。";
+
+  return {
+    title: extracted.title,
+    summary: extracted.text.replace(/\s+/g, " ").slice(0, 220),
+    wikiTitle: extracted.title,
+    wikiMarkdown: [
+      `# ${extracted.title}`,
+      "",
+      "## 当前状态",
+      statusNote,
+      extracted.errorMessage ? `处理提示：${extracted.errorMessage}` : "",
+      "",
+      "## 已保存内容",
+      extracted.text,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  };
+}
+
+async function saveExtractedContent(capture: Capture, extracted: ExtractedCaptureContent) {
+  const result = await query<ExtractedContent>(
+    `
+      insert into extracted_contents (
+        capture_id,
+        user_id,
+        title,
+        content_text,
+        content_format,
+        extraction_method,
+        status,
+        metadata,
+        error_message
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+      on conflict (capture_id)
+      do update set
+        title = excluded.title,
+        content_text = excluded.content_text,
+        content_format = excluded.content_format,
+        extraction_method = excluded.extraction_method,
+        status = excluded.status,
+        metadata = excluded.metadata,
+        error_message = excluded.error_message,
+        created_at = now()
+      returning *
+    `,
+    [
+      capture.id,
+      capture.user_id,
+      extracted.title,
+      extracted.text,
+      extracted.contentFormat,
+      extracted.method,
+      extracted.status,
+      JSON.stringify(extracted.metadata),
+      extracted.errorMessage || null,
+    ],
+  );
+
+  return result.rows[0];
 }
 
 async function loadCapture(captureId: string) {
@@ -89,6 +215,62 @@ async function loadCapture(captureId: string) {
   return row;
 }
 
+async function ensureProcessingJob(capture: Capture) {
+  const existing = await query<ProcessingJob>(
+    `
+      select *
+      from processing_jobs
+      where capture_id = $1
+      order by created_at desc
+      limit 1
+    `,
+    [capture.id],
+  );
+
+  if (existing.rows[0]) {
+    return existing.rows[0];
+  }
+
+  const created = await query<ProcessingJob>(
+    `
+      insert into processing_jobs (capture_id, user_id, job_type, status, current_step)
+      values ($1, $2, 'process_capture', 'queued', 'queued')
+      returning *
+    `,
+    [capture.id, capture.user_id],
+  );
+
+  return created.rows[0];
+}
+
+async function runJobStep<T>(jobId: string, step: string, action: () => Promise<T>) {
+  await markJobStep(jobId, step, "running");
+  const result = await action();
+  await markJobStep(jobId, step, "completed");
+  return result;
+}
+
+async function markJobStep(jobId: string, step: string, status: "running" | "completed" | "failed", error?: string) {
+  const timestampField = status === "running" ? "started_at" : "finished_at";
+
+  await query(
+    `
+      update processing_jobs
+      set
+        current_step = $2,
+        step_status = coalesce(step_status, '{}'::jsonb)
+          || jsonb_build_object(
+            $2::text,
+            coalesce(step_status -> $2::text, '{}'::jsonb)
+              || jsonb_build_object('status', $3::text, '${timestampField}', now())
+              || case when $4::text is null then '{}'::jsonb else jsonb_build_object('error', $4::text) end
+          )
+      where id = $1
+    `,
+    [jobId, step, status, error || null],
+  );
+}
+
 async function createSource(
   capture: Capture,
   input: { title: string; text: string; summary: string; metadata: unknown },
@@ -99,6 +281,14 @@ async function createSource(
         capture_id, user_id, title, source_type, original_url, extracted_text, summary, metadata
       )
       values ($1, $2, $3, $4, $5, $6, $7, $8)
+      on conflict (capture_id)
+      do update set
+        title = excluded.title,
+        source_type = excluded.source_type,
+        original_url = excluded.original_url,
+        extracted_text = excluded.extracted_text,
+        summary = excluded.summary,
+        metadata = excluded.metadata
       returning *
     `,
     [
@@ -121,11 +311,31 @@ async function createWikiPage(
   source: Source,
   input: { title: string; markdown: string },
 ) {
+  const existing = await query<WikiPage>(
+    `
+      select wp.*
+      from source_wiki_pages swp
+      join wiki_pages wp on wp.id = swp.wiki_page_id
+      where swp.source_id = $1
+      limit 1
+    `,
+    [source.id],
+  );
+
+  if (existing.rows[0]) {
+    return existing.rows[0];
+  }
+
   const slug = toSlug(input.title || source.title || source.id) || source.id;
   const result = await query<WikiPage>(
     `
       insert into wiki_pages (user_id, title, slug, content_markdown, status)
       values ($1, $2, $3, $4, 'draft')
+      on conflict (user_id, slug)
+      do update set
+        title = excluded.title,
+        content_markdown = excluded.content_markdown,
+        updated_at = now()
       returning *
     `,
     [capture.user_id, input.title, `${slug}-${source.id.slice(0, 8)}`, input.markdown],
@@ -134,8 +344,19 @@ async function createWikiPage(
   return result.rows[0];
 }
 
-async function createChunks(capture: Capture, source: Source, wikiPage: WikiPage) {
-  const chunkInputs = [
+async function linkSourceToWikiPage(source: Source, wikiPage: WikiPage) {
+  await query(
+    `
+      insert into source_wiki_pages (source_id, wiki_page_id, relation_type, confidence)
+      values ($1, $2, 'draft_from_source', 1)
+      on conflict (source_id, wiki_page_id) do nothing
+    `,
+    [source.id, wikiPage.id],
+  );
+}
+
+function buildChunkInputs(source: Source, wikiPage: WikiPage) {
+  return [
     ...chunkText(source.extracted_text).map((content) => ({
       parent_type: "source" as const,
       parent_id: source.id,
@@ -147,8 +368,26 @@ async function createChunks(capture: Capture, source: Source, wikiPage: WikiPage
       content,
     })),
   ];
+}
 
-  const embeddings = await embedTexts(chunkInputs.map((chunk) => chunk.content));
+async function createChunks(
+  capture: Capture,
+  source: Source,
+  wikiPage: WikiPage,
+  chunkInputs: Array<{ parent_type: "source" | "wiki_page"; parent_id: string; content: string }>,
+  embeddings: number[][],
+) {
+  await query(
+    `
+      delete from chunks
+      where user_id = $1
+        and (
+          (parent_type = 'source' and parent_id = $2)
+          or (parent_type = 'wiki_page' and parent_id = $3)
+        )
+    `,
+    [capture.user_id, source.id, wikiPage.id],
+  );
 
   for (const [index, chunk] of chunkInputs.entries()) {
     await query(
@@ -161,13 +400,9 @@ async function createChunks(capture: Capture, source: Source, wikiPage: WikiPage
         chunk.parent_type,
         chunk.parent_id,
         chunk.content,
-        toSqlVector(embeddings[index]),
+        embeddings[index] ? toSqlVector(embeddings[index]) : null,
         roughTokenCount(chunk.content),
       ],
     );
   }
-}
-
-function toSqlVector(embedding: number[]) {
-  return `[${embedding.join(",")}]`;
 }

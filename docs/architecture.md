@@ -17,6 +17,16 @@ Sift 不是普通 CRUD 产品。它的核心处理链路天然是异步的：
 
 因此第一版就要引入任务系统，而不是把处理塞进普通 API Route。
 
+更具体地说，保存动作必须先快：
+
+```text
+接收输入 -> 保存原始数据 -> 创建处理任务 -> 立刻返回成功
+```
+
+网页提取、OCR、音频转写、AI 整理、Wiki 生成、chunk 切分和 embedding 写入都应该异步运行。用户体验上，资料应先进入 Inbox，处理结果再逐步出现。
+
+Sift 的产品边界不是通用 Agent Runtime。它应作为 Capture-first LLM Wiki 和 Knowledge Agent Layer，负责资料入口、知识治理、混合检索和可信引用；复杂执行动作交给 Claude Code、Codex、pi-mono 等外部 Agent 工作台。
+
 ## 推荐技术栈
 
 Prototype / Validated MVP：
@@ -93,6 +103,8 @@ Beta：
 - 来源平台
 - 处理状态
 
+Inbox API 不应该同步调用大模型。它只做保存、校验、入库和派发任务。任何耗时处理都由后台任务完成。
+
 ## Processing Queue
 
 负责运行耗时任务。
@@ -111,6 +123,18 @@ Beta：
 - 失败重试
 
 Prototype 阶段 UI 可以用轮询显示处理状态，但后台仍应按任务模型设计。
+
+处理阶段应尽量可观察：
+
+- `fetch_link`
+- `ocr_images`
+- `transcribe_audio`
+- `create_source`
+- `create_wiki_page`
+- `create_chunks`
+- `create_embeddings`
+
+每一步都应该可以失败、记录错误、重试。链接抓取失败不应影响原始链接保存；OCR 失败不应影响原始图片保存；embedding 慢不应影响 Source 和 Wiki 先出现。
 
 ## Extraction Pipeline
 

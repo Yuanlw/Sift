@@ -14,11 +14,16 @@ create table captures (
   raw_url text,
   raw_text text,
   file_url text,
+  raw_payload jsonb not null default '{}'::jsonb,
+  raw_attachments jsonb not null default '[]'::jsonb,
   note text,
   status capture_status not null default 'queued',
   created_at timestamptz not null default now(),
   constraint capture_has_content check (
-    raw_url is not null or raw_text is not null or file_url is not null
+    raw_url is not null
+    or raw_text is not null
+    or file_url is not null
+    or jsonb_array_length(raw_attachments) > 0
   )
 );
 
@@ -28,15 +33,31 @@ create table processing_jobs (
   user_id uuid not null,
   job_type job_type not null,
   status job_status not null default 'queued',
+  current_step text not null default 'queued',
+  step_status jsonb not null default '{}'::jsonb,
   error_message text,
   started_at timestamptz,
   finished_at timestamptz,
   created_at timestamptz not null default now()
 );
 
+create table extracted_contents (
+  id uuid primary key default gen_random_uuid(),
+  capture_id uuid not null unique references captures(id) on delete cascade,
+  user_id uuid not null,
+  title text not null,
+  content_text text not null,
+  content_format text not null default 'plain_text',
+  extraction_method text not null,
+  status text not null check (status in ('extracted', 'fallback')),
+  metadata jsonb not null default '{}'::jsonb,
+  error_message text,
+  created_at timestamptz not null default now()
+);
+
 create table sources (
   id uuid primary key default gen_random_uuid(),
-  capture_id uuid not null references captures(id) on delete cascade,
+  capture_id uuid not null unique references captures(id) on delete cascade,
   user_id uuid not null,
   title text not null,
   source_type capture_type not null,
@@ -79,9 +100,27 @@ create table chunks (
   created_at timestamptz not null default now()
 );
 
+create table audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  action text not null,
+  resource_type text not null,
+  resource_id text,
+  status text not null check (status in ('success', 'failure', 'denied')),
+  metadata jsonb not null default '{}'::jsonb,
+  ip_address text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+
 create index captures_user_created_idx on captures (user_id, created_at desc);
 create index processing_jobs_capture_idx on processing_jobs (capture_id);
+create index extracted_contents_capture_idx on extracted_contents (capture_id, created_at desc);
 create index sources_user_created_idx on sources (user_id, created_at desc);
 create index wiki_pages_user_updated_idx on wiki_pages (user_id, updated_at desc);
 create index chunks_parent_idx on chunks (parent_type, parent_id);
 create index chunks_embedding_idx on chunks using ivfflat (embedding vector_cosine_ops);
+create index sources_user_original_url_idx on sources (user_id, original_url) where original_url is not null;
+create index chunks_content_fts_idx on chunks using gin (to_tsvector('simple', content));
+create index audit_logs_user_created_idx on audit_logs (user_id, created_at desc);
+create index audit_logs_resource_idx on audit_logs (resource_type, resource_id, created_at desc);

@@ -3,16 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/ensure-port-available.mjs 3000 && next dev -p 3000",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
+    "docker:migrate": "for f in supabase/migrations/*.sql; do docker compose exec -T postgres psql -U sift -d sift -v ON_ERROR_STOP=1 < \"$f\"; done",
+    "docker:reset": "docker compose down -v && docker compose up -d --build",
     "db:up": "docker compose -f docker-compose.dev.yml up -d postgres",
     "db:down": "docker compose -f docker-compose.dev.yml down",
+    "db:migrate": "for f in supabase/migrations/*.sql; do docker compose -f docker-compose.dev.yml exec -T postgres psql -U sift -d sift -v ON_ERROR_STOP=1 < \"$f\"; done",
     "db:reset": "docker compose -f docker-compose.dev.yml down -v && docker compose -f docker-compose.dev.yml up -d postgres",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke:agent": "node scripts/smoke-agent-api.mjs"
   },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",

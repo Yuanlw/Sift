@@ -25,8 +25,32 @@ Capture 记录的是“用户保存了什么”，不负责表达整理后的知
 - `raw_url`
 - `raw_text`
 - `file_url`
+- `raw_payload`
+- `raw_attachments`
 - `note`
 - `status`
+- `created_at`
+
+`raw_payload` 保留本次保存动作的原始结构化输入；`raw_attachments` 保留图片、音频或文件等原始附件引用。后台提取失败时，这两项仍然是可追溯的原始证据。
+
+## ExtractedContent
+
+`ExtractedContent` 是从 Capture 中提取出的可读内容。
+
+它位于 Raw Capture 和 Source 之间，用来保证“保存成功”和“智能整理成功”解耦。链接抓取失败、封闭平台无法读取正文、图片 OCR 尚未完成时，也应该写入一条 fallback 提取结果，方便用户补充资料或稍后重试。
+
+关键字段：
+
+- `id`
+- `capture_id`
+- `user_id`
+- `title`
+- `content_text`
+- `content_format`
+- `extraction_method`
+- `status`
+- `metadata`
+- `error_message`
 - `created_at`
 
 ## Source
@@ -135,10 +159,50 @@ Chunk 可以来自 Source，也可以来自 WikiPage。
 - `user_id`
 - `job_type`
 - `status`
+- `current_step`
+- `step_status`
 - `error_message`
 - `started_at`
 - `finished_at`
 - `created_at`
+
+`current_step` 用于快速展示任务卡在哪一步；`step_status` 记录每个处理步骤的运行状态和时间点。Prototype 阶段先覆盖：
+
+- `fetch_link`
+- `extracting`
+- `structuring`
+- `create_source`
+- `create_wiki_page`
+- `create_embeddings`
+- `create_chunks`
+
+## AuditLog
+
+`AuditLog` 记录关键 API 和 Agent/MCP 访问行为。
+
+关键字段：
+
+- `id`
+- `user_id`
+- `action`
+- `resource_type`
+- `resource_id`
+- `status`
+- `metadata`
+- `ip_address`
+- `user_agent`
+- `created_at`
+
+Prototype 阶段先记录：
+
+- Capture 创建和重试
+- 全库 Ask
+- WikiPage Ask
+- Agent Query
+- Agent Source / Wiki 读取
+- MCP tool 和 resource 读取
+
+审计日志不是业务权限本身，但它能帮助定位外部 Agent 读取了哪些上下文和来源。
 
 ## 暂缓模型
 

@@ -65,6 +65,8 @@ Phase 0 默认使用：
 - 让每次输入都变成长期资产。
 - 保留来源，区分事实和解释。
 - 优先服务复用：写作、研究、判断和行动。
+- 不做通用 Agent Runtime；Sift 是 Capture-first LLM Wiki 和 Knowledge Agent Layer。
+- 保存动作必须先快：先保存原始数据，再异步提取、整理、检索和引用。
 
 ## 文档
 
@@ -76,5 +78,7 @@ Phase 0 默认使用：
 - [本地启动](docs/local-setup.md)
 - [部署方式](docs/deployment.md)
 - [Phase 0 可执行计划](docs/phase-0-plan.md)
+- [Capture-first Roadmap](docs/capture-first-roadmap.md)
+- [Agent API / MCP 接入](docs/agent-api.md)
 - [知识库规则](prompts/wiki-maintenance.md)
 - [资料摄入提示词](prompts/ingestion.md)

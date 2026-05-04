@@ -2,9 +2,20 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type CaptureStatus = "queued" | "processing" | "completed" | "failed";
 export type CaptureType = "link" | "text" | "image";
+export type ExtractionStatus = "extracted" | "fallback";
 export type JobStatus = "queued" | "running" | "completed" | "failed";
 export type JobType = "process_capture";
 export type WikiPageStatus = "draft" | "published" | "archived";
+export type AuditStatus = "success" | "failure" | "denied";
+
+export interface RawAttachment {
+  kind: "image" | "audio" | "file";
+  url: string;
+  name?: string | null;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+  storage?: "local" | "remote" | null;
+}
 
 export interface Capture {
   id: string;
@@ -13,8 +24,38 @@ export interface Capture {
   raw_url: string | null;
   raw_text: string | null;
   file_url: string | null;
+  raw_payload: Json;
+  raw_attachments: RawAttachment[];
   note: string | null;
   status: CaptureStatus;
+  created_at: string;
+}
+
+export interface ProcessingJob {
+  id: string;
+  capture_id: string;
+  user_id: string;
+  job_type: JobType;
+  status: JobStatus;
+  current_step: string;
+  step_status: Json;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
+export interface ExtractedContent {
+  id: string;
+  capture_id: string;
+  user_id: string;
+  title: string;
+  content_text: string;
+  content_format: string;
+  extraction_method: string;
+  status: ExtractionStatus;
+  metadata: Json;
+  error_message: string | null;
   created_at: string;
 }
 
@@ -42,6 +83,19 @@ export interface WikiPage {
   updated_at: string;
 }
 
+export interface AuditLog {
+  id: string;
+  user_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  status: AuditStatus;
+  metadata: Json;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -53,6 +107,8 @@ export interface Database {
           raw_url: string | null;
           raw_text: string | null;
           file_url: string | null;
+          raw_payload: Json;
+          raw_attachments: RawAttachment[];
           note: string | null;
           status: CaptureStatus;
           created_at: string;
@@ -64,6 +120,8 @@ export interface Database {
           raw_url?: string | null;
           raw_text?: string | null;
           file_url?: string | null;
+          raw_payload?: Json;
+          raw_attachments?: RawAttachment[];
           note?: string | null;
           status?: CaptureStatus;
           created_at?: string;
@@ -77,6 +135,8 @@ export interface Database {
           user_id: string;
           job_type: JobType;
           status: JobStatus;
+          current_step: string;
+          step_status: Json;
           error_message: string | null;
           started_at: string | null;
           finished_at: string | null;
@@ -88,12 +148,43 @@ export interface Database {
           user_id: string;
           job_type: JobType;
           status?: JobStatus;
+          current_step?: string;
+          step_status?: Json;
           error_message?: string | null;
           started_at?: string | null;
           finished_at?: string | null;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["processing_jobs"]["Insert"]>;
+      };
+      extracted_contents: {
+        Row: {
+          id: string;
+          capture_id: string;
+          user_id: string;
+          title: string;
+          content_text: string;
+          content_format: string;
+          extraction_method: string;
+          status: ExtractionStatus;
+          metadata: Json;
+          error_message: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          capture_id: string;
+          user_id: string;
+          title: string;
+          content_text: string;
+          content_format?: string;
+          extraction_method: string;
+          status?: ExtractionStatus;
+          metadata?: Json;
+          error_message?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["extracted_contents"]["Insert"]>;
       };
       sources: {
         Row: {
@@ -184,6 +275,33 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["chunks"]["Insert"]>;
+      };
+      audit_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          action: string;
+          resource_type: string;
+          resource_id: string | null;
+          status: AuditStatus;
+          metadata: Json;
+          ip_address: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          action: string;
+          resource_type: string;
+          resource_id?: string | null;
+          status: AuditStatus;
+          metadata?: Json;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["audit_logs"]["Insert"]>;
       };
     };
     Views: Record<string, never>;

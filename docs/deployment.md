@@ -31,6 +31,18 @@ docker compose up -d --build
 http://127.0.0.1:3000
 ```
 
+如果数据库容器之前已经启动过，Docker 会复用旧 volume，`supabase/schema.sql` 不会再次自动执行。升级已有本地 Docker 数据库时运行：
+
+```bash
+npm run docker:migrate
+```
+
+如果只是本地测试、没有需要保留的数据，可以直接重建：
+
+```bash
+npm run docker:reset
+```
+
 默认情况下，容器内的 Sift 会通过下面地址访问宿主机上的本地模型服务：
 
 ```text
@@ -129,7 +141,7 @@ Docker 一键启动默认使用：
 JOB_DISPATCHER=inline
 ```
 
-这会在保存请求中直接运行处理链路，便于单机 Docker 验证。后台异步处理后续可切换为：
+这会让保存请求只写入原始 Capture 和 ProcessingJob 后立刻返回，并在本地进程里异步启动处理。需要独立后台任务时切换为：
 
 ```text
 JOB_DISPATCHER=inngest

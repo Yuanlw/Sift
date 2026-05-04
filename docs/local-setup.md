@@ -31,12 +31,24 @@ cp .env.example .env.local
 - `MODEL_TEXT_MODEL`
 - `MODEL_EMBEDDING_MODEL`
 - `MODEL_EMBEDDING_DIMENSIONS`
+- `MODEL_VISION_BASE_URL`
+- `MODEL_VISION_API_KEY`
+- `MODEL_VISION_MODEL`
 - `JOB_DISPATCHER`
 - `INNGEST_EVENT_KEY`
 - `INNGEST_SIGNING_KEY`
 - `SIFT_SINGLE_USER_ID`
+- `SIFT_TRUST_USER_HEADER`
+- `SIFT_USER_ID_HEADER`
+- `SIFT_AGENT_API_KEY`
 
 Phase 0 使用 hardcoded 单用户，`SIFT_SINGLE_USER_ID` 可以先保留默认值。
+
+`SIFT_AGENT_API_KEY` 是可选项。留空时本地 Agent API 不强制认证；填写后，`/api/agent/*` 和 `/api/mcp` 请求需要携带 Bearer Token。
+
+`MODEL_VISION_*` 是图片 OCR 使用的 OpenAI-compatible 视觉模型配置。留空时会复用文本模型配置；如果文本模型不支持图片输入，图片会保存原始附件并降级为 fallback。上传文件会保存在私有 `.data/uploads/captures` 目录，通过授权 API 读取；当前只支持图片文件，单张 10MB，一次最多 6 张。
+
+`SIFT_TRUST_USER_HEADER=false` 时保持单用户模式。只有在反向代理或网关已经完成认证时，才建议改成 `true`，此时 Sift 会从 `SIFT_USER_ID_HEADER` 指定的请求头读取用户 UUID。
 
 ## 启动方式
 
@@ -102,26 +114,48 @@ Sift 就可以先用本地模型跑通。
 
 ## 任务派发
 
-Phase 0 Docker 默认：
+Capture-first P0 默认：
 
 ```text
 JOB_DISPATCHER=inline
 ```
 
-这表示保存资料时会立即处理 Capture，方便 Docker 单机验证完整链路。
+这表示保存请求只负责写入 Capture 和 ProcessingJob，然后立刻返回；处理链路会在本地进程里异步启动，不在用户等待的请求里同步提取、总结或写 embedding。
 
-需要启用 Inngest 时再改成：
+需要后台处理时改成：
 
 ```text
 JOB_DISPATCHER=inngest
 ```
 
-并配置本地或云端 Inngest。
+并配置本地或云端 Inngest。需要只保存不处理时，可以临时改成：
+
+```text
+JOB_DISPATCHER=none
+```
 
 ## 开发命令
 
 ```bash
 npm run dev
+```
+
+Docker 数据库已经启动过之后，`schema.sql` 不会自动重新执行。升级已有 Docker 数据库时运行：
+
+```bash
+npm run docker:migrate
+```
+
+如果只是本地测试、数据库里没有需要保留的资料，也可以重建 Docker 卷：
+
+```bash
+npm run docker:reset
+```
+
+只启动开发数据库时，对应命令是：
+
+```bash
+npm run db:migrate
 ```
 
 检查：
@@ -132,17 +166,23 @@ npm run lint
 npm run build
 ```
 
+Agent API / MCP smoke check：
+
+```bash
+npm run smoke:agent
+```
+
 ## Phase 0 当前链路
 
-1. 用户在 `/inbox` 提交链接或文本。
+1. 用户在 `/inbox` 提交链接、文本或图片。
 2. `/api/captures` 创建 Capture 和 ProcessingJob。
-3. API 发送 `capture/process.requested` 事件。
-4. Inngest 调用 `processCapture`。
+3. API 按 `JOB_DISPATCHER` 配置派发后台处理。
+4. 后台调用 `processCapture`。
 5. 任务提取文本，生成 Source、draft WikiPage、chunks 和 embeddings。
 
 ## 当前限制
 
-- 图片上传 UI 还没接入，只预留了数据结构。
-- 还没有正式账号系统。
-- 还没有知识库级问答。
+- 图片可以上传并保存原始附件，OCR 依赖 `MODEL_VISION_*` 指向的视觉模型能力；PDF 和音频暂未开放上传处理。
+- 还没有正式账号系统；当前多用户模式依赖受信任网关传入用户 UUID 请求头。
+- 知识库级问答已有基础版本，但还没有完整的权限、审计和评测体系。
 - 模型层当前先支持 OpenAI-compatible provider，后续再增加 Anthropic、OpenAI、Gemini 等专用 adapter。
