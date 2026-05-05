@@ -1,21 +1,119 @@
-MIT License
+Sift Source-Available License v1.0
 
-Copyright (c) 2026 Chris
+Copyright (c) 2026 Chris. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license is intended to make the Sift source code readable, learnable, and
+usable for personal and internal purposes, while preventing unauthorized hosted
+commercial services, resale, and white-label SaaS offerings.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This is not an open-source license.
+
+1. Definitions
+
+"Software" means the Sift source code, documentation, assets, configuration,
+and related materials distributed with this repository.
+
+"You" means any individual or legal entity receiving, using, copying, modifying,
+or distributing the Software.
+
+"Hosted Service" means making the Software, a modified version of the Software,
+or a substantially similar derivative available to third parties over a network,
+including as SaaS, a managed service, a hosted product, an API service, or a
+white-label service.
+
+"Internal Use" means use by You, Your employees, contractors, or collaborators
+for Your own personal, educational, research, evaluation, development, or
+internal organizational purposes, where the Software is not offered as a Hosted
+Service to third parties.
+
+2. Permitted Uses
+
+Subject to this license, You may:
+
+- read, study, and evaluate the Software;
+- copy and run the Software for personal use;
+- modify the Software for personal, educational, research, evaluation, or
+  Internal Use;
+- deploy the Software inside Your own organization for internal knowledge
+  management, research, learning, or prototyping;
+- create screenshots, demos, articles, videos, or reviews about the Software,
+  provided they do not distribute a competing hosted service or remove required
+  attribution;
+- contribute patches, issues, or suggestions back to the project.
+
+3. Prohibited Uses
+
+Without prior written permission from the copyright holder, You may not:
+
+- offer the Software, a modified version, or a substantially similar derivative
+  as a public SaaS, managed service, hosted product, hosted API, or white-label
+  product;
+- sell, rent, lease, sublicense, or commercially distribute the Software as a
+  standalone product;
+- use the Software to provide paid hosted knowledge-base, capture, search,
+  wiki, agent-memory, or retrieval services to third parties;
+- remove, obscure, or alter copyright notices, license notices, product names,
+  or attribution notices;
+- claim that this project is open source;
+- use the name "Sift" or confusingly similar branding for an unauthorized
+  commercial product, hosted service, or derivative;
+- use the Software in a way that violates applicable law or infringes third
+  party rights.
+
+4. Distribution
+
+You may share unmodified copies of the Software for personal, educational,
+research, or evaluation purposes, provided that:
+
+- this license file is included;
+- copyright notices are preserved;
+- the recipient is informed that the Software is source-available, not open
+  source;
+- the distribution is not part of a paid product, hosted service, managed
+  service, or commercial resale.
+
+Distribution of modified versions requires prior written permission unless the
+distribution is limited to private Internal Use within Your own organization.
+
+5. Commercial and Hosted Use
+
+Commercial use that is limited to Internal Use is allowed.
+
+Commercial use that offers Sift or a derivative to third parties as a Hosted
+Service is not allowed without a separate written commercial license.
+
+For permission to provide a hosted service, commercial SaaS, managed service,
+white-label product, or other commercial distribution, contact the copyright
+holder for a separate agreement.
+
+6. Contributions
+
+Unless otherwise agreed in writing, by submitting a contribution to this project
+You grant the copyright holder a perpetual, worldwide, non-exclusive,
+royalty-free license to use, reproduce, modify, distribute, and sublicense that
+contribution as part of the Software.
+
+7. No Warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+
+8. Limitation of Liability
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.
+
+9. Termination
+
+If You violate this license, Your rights under this license terminate
+automatically. Upon termination, You must stop using, copying, modifying,
+distributing, or deploying the Software and destroy any copies in Your
+possession or control, except where retention is required by law.
+
+10. Reservation of Rights
+
+All rights not expressly granted in this license are reserved by the copyright
+holder.
