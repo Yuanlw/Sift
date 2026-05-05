@@ -91,6 +91,32 @@ export async function POST(request: Request, { params }: { params: { slug: strin
       wikiMarkdown: first.content_markdown,
       sources,
     });
+    await query(
+      `
+        insert into ask_histories (
+          user_id,
+          scope_type,
+          scope_id,
+          question,
+          answer,
+          citations,
+          metadata
+        )
+        values ($1, 'wiki_page', $2, $3, $4, $5::jsonb, $6::jsonb)
+      `,
+      [
+        userContext.userId,
+        first.wiki_id,
+        body.question,
+        answer.answer,
+        JSON.stringify(answer.citations),
+        JSON.stringify({
+          source_count: sources.length,
+          slug,
+          title: first.wiki_title,
+        }),
+      ],
+    );
     await writeAuditLog({
       userId: userContext.userId,
       action: "ask.wiki",

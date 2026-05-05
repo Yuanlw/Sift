@@ -5,6 +5,7 @@ import type { RawAttachment } from "@/types/database";
 
 export const CAPTURE_UPLOAD_URL_PREFIX = "/api/uploads/captures/";
 export const MAX_CAPTURE_FILES = 6;
+export const MAX_CAPTURE_IMPORT_FILES = 60;
 export const MAX_CAPTURE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 const CAPTURE_UPLOAD_DIR = path.join(process.cwd(), ".data", "uploads", "captures");
@@ -24,15 +25,16 @@ export class UploadValidationError extends Error {
   }
 }
 
-export async function saveCaptureUploads(values: FormDataEntryValue[]) {
+export async function saveCaptureUploads(values: FormDataEntryValue[], options: { maxFiles?: number } = {}) {
   const files = values.filter((value): value is File => value instanceof File && value.size > 0);
+  const maxFiles = options.maxFiles ?? MAX_CAPTURE_FILES;
 
   if (files.length === 0) {
     return [];
   }
 
-  if (files.length > MAX_CAPTURE_FILES) {
-    throw new UploadValidationError(`最多一次上传 ${MAX_CAPTURE_FILES} 张图片。`);
+  if (files.length > maxFiles) {
+    throw new UploadValidationError(`最多一次上传 ${maxFiles} 张图片。`);
   }
 
   await mkdir(CAPTURE_UPLOAD_DIR, { recursive: true });

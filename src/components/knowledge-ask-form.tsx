@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FormattedAnswer } from "@/components/formatted-answer";
 import type { Locale } from "@/lib/i18n";
@@ -20,6 +21,8 @@ const copy = {
     titleScore: "标题",
     source: "来源资料",
     wiki: "知识页",
+    history: "历史问答",
+    historyEmpty: "还没有问过整个知识库。",
   },
   en: {
     aria: "Ask the knowledge base",
@@ -35,6 +38,8 @@ const copy = {
     titleScore: "title",
     source: "source",
     wiki: "wiki page",
+    history: "Ask history",
+    historyEmpty: "No whole-library questions yet.",
   },
 } satisfies Record<Locale, Record<string, string>>;
 
@@ -66,8 +71,22 @@ interface KnowledgeAnswer {
   };
 }
 
-export function KnowledgeAskForm({ locale = "zh" }: { locale?: Locale }) {
+interface AskHistoryItem {
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+}
+
+export function KnowledgeAskForm({
+  histories = [],
+  locale = "zh",
+}: {
+  histories?: AskHistoryItem[];
+  locale?: Locale;
+}) {
   const t = copy[locale];
+  const router = useRouter();
   const [answer, setAnswer] = useState<KnowledgeAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -99,6 +118,7 @@ export function KnowledgeAskForm({ locale = "zh" }: { locale?: Locale }) {
 
       setAnswer(result);
       form.reset();
+      router.refresh();
     } finally {
       setIsLoading(false);
     }
@@ -159,6 +179,25 @@ export function KnowledgeAskForm({ locale = "zh" }: { locale?: Locale }) {
           ) : null}
         </div>
       ) : null}
+
+      <div className="ask-history-panel">
+        <h3>{t.history}</h3>
+        {histories.length > 0 ? (
+          <div className="ask-history-list ask-history-list-global">
+            {histories.map((item) => (
+              <details className="ask-history-item" key={item.id}>
+                <summary>
+                  <strong>{item.question}</strong>
+                  <span className="meta">{formatHistoryTime(item.createdAt, locale)}</span>
+                </summary>
+                <p>{toAnswerPreview(item.answer)}</p>
+              </details>
+            ))}
+          </div>
+        ) : (
+          <p className="meta">{t.historyEmpty}</p>
+        )}
+      </div>
     </section>
   );
 }
@@ -195,4 +234,17 @@ function CitationLink({
       [{citation.label}] {citation.title}
     </Link>
   );
+}
+
+function formatHistoryTime(value: string, locale: Locale) {
+  return new Intl.DateTimeFormat(locale === "en" ? "en-US" : "zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function toAnswerPreview(answer: string) {
+  return answer.replace(/\s+/g, " ").trim().slice(0, 360);
 }

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SourceArchiveActions } from "@/components/source-archive-actions";
 import { query } from "@/lib/db";
 import { formatDateTime, getLocale, localeText } from "@/lib/i18n";
 import { loadDuplicateSourceSuggestions } from "@/lib/reuse-suggestions";
 import { getUserContextFromHeaders } from "@/lib/user-context";
-import type { CaptureType } from "@/types/database";
+import type { CaptureStatus, CaptureType } from "@/types/database";
 
 interface SourceDetailRow {
   id: string;
@@ -15,6 +16,7 @@ interface SourceDetailRow {
   summary: string | null;
   created_at: string;
   capture_id: string;
+  capture_status: CaptureStatus;
   capture_note: string | null;
   wiki_title: string | null;
   wiki_slug: string | null;
@@ -36,6 +38,7 @@ async function loadSource(id: string, userId: string) {
         s.summary,
         s.created_at,
         s.capture_id,
+        c.status as capture_status,
         c.note as capture_note,
         wp.title as wiki_title,
         wp.slug as wiki_slug
@@ -112,6 +115,19 @@ export default async function SourceDetailPage({ params }: { params: { id: strin
             <h3>{localeText(locale, "关联", "Relations")}</h3>
             <p>{source.wiki_title ? `${localeText(locale, "已生成知识页", "Wiki page")}：${source.wiki_title}` : localeText(locale, "等待生成知识页。", "Waiting for wiki page.")}</p>
             {source.capture_note ? <p>{localeText(locale, "备注", "Note")}：{source.capture_note}</p> : null}
+          </div>
+          <div className="panel">
+            <h3>{localeText(locale, "资料管理", "Manage")}</h3>
+            <p>
+              {source.capture_status === "ignored"
+                ? localeText(locale, "这条来源已归档，不会出现在默认来源列表和推荐里。", "This source is archived and hidden from default lists.")
+                : localeText(locale, "归档会把这条来源移出默认列表，原始资料和知识链路仍保留。", "Archive hides this source from default lists while keeping the raw material.")}
+            </p>
+            <SourceArchiveActions
+              isArchived={source.capture_status === "ignored"}
+              locale={locale}
+              sourceId={source.id}
+            />
           </div>
           <div className="panel">
             <h3>{localeText(locale, "重复建议", "Duplicate suggestions")}</h3>

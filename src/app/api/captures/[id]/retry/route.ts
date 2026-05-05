@@ -29,6 +29,31 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return NextResponse.json({ error: "Capture not found." }, { status: 404 });
     }
 
+    await query(
+      `
+        update captures
+        set status = 'queued',
+            raw_payload = coalesce(raw_payload, '{}'::jsonb)
+              || jsonb_build_object('retryRequestedAt', now())
+        where id = $1 and user_id = $2
+      `,
+      [params.id, userContext.userId],
+    );
+
+    await query(
+      `
+        update processing_jobs
+        set status = 'queued',
+            current_step = 'queued',
+            step_status = '{}'::jsonb,
+            error_message = null,
+            started_at = null,
+            finished_at = null
+        where capture_id = $1 and user_id = $2
+      `,
+      [params.id, userContext.userId],
+    );
+
     setTimeout(() => {
       void processCaptureById(params.id).catch(async (error) => {
         const message = error instanceof Error ? error.message : "Unknown processing error";

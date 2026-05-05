@@ -1,44 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n";
 
 const copy = {
   zh: {
     saving: "正在保存...",
-    saved: "已保存，后台任务已排队。",
+    saved: "已保存到今日收集。",
     failed: "保存失败。",
     missing: "缺少：",
-    url: "链接",
-    urlPlaceholder: "https://...",
+    placeholder: "丢进来：链接、正文、想法，或者说明这些截图为什么值得保存",
+    composerLabel: "收集内容",
+    addImages: "添加图片",
+    imagesSelected: "张图片",
+    detected: "已识别",
+    link: "链接",
     text: "文本",
-    textPlaceholder: "粘贴文章片段、想法、聊天记录，或补充图片里的文字",
-    note: "备注",
-    notePlaceholder: "为什么保存它？",
-    files: "本地图片",
-    filesHint: "可上传截图、长图或文章图片。单张不超过 10MB，一次最多 6 张。",
-    fileUrl: "附件链接",
-    fileUrlPlaceholder: "可选：图片、截图或文件 URL",
-    submit: "保存到收集箱",
+    image: "图片",
+    emptyHint: "粘贴链接、长文、聊天记录，或添加截图。",
+    mascotLabel: "知识入口",
+    noteLabel: "为什么保存",
+    notePlaceholder: "可选：写一句以后为什么要回来看",
+    submit: "保存",
     submitSaving: "保存中",
   },
   en: {
     saving: "Saving...",
-    saved: "Saved. Background processing has been queued.",
+    saved: "Saved to Today.",
     failed: "Save failed.",
     missing: "Missing: ",
-    url: "Link",
-    urlPlaceholder: "https://...",
+    placeholder: "Drop in a link, text, note, or why these screenshots matter",
+    composerLabel: "Capture content",
+    addImages: "Add images",
+    imagesSelected: "images",
+    detected: "Detected",
+    link: "Link",
     text: "Text",
-    textPlaceholder: "Paste article text, notes, chat logs, or text from an image",
-    note: "Note",
-    notePlaceholder: "Why are you saving this?",
-    files: "Local images",
-    filesHint: "Upload screenshots, long images, or article images. Up to 6 images, 10MB each.",
-    fileUrl: "Attachment URL",
-    fileUrlPlaceholder: "Optional: image, screenshot, or file URL",
-    submit: "Save to Inbox",
+    image: "Image",
+    emptyHint: "Paste a link, long text, chat log, or attach screenshots.",
+    mascotLabel: "Knowledge feeder",
+    noteLabel: "Why save this",
+    notePlaceholder: "Optional: why this will matter later",
+    submit: "Save",
     submitSaving: "Saving",
   },
 } satisfies Record<Locale, Record<string, string>>;
@@ -48,6 +52,10 @@ export function CaptureForm({ locale = "zh" }: { locale?: Locale }) {
   const t = copy[locale];
   const [status, setStatus] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [content, setContent] = useState("");
+  const [fileCount, setFileCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const detectedKinds = useMemo(() => getDetectedKinds(content, fileCount), [content, fileCount]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,6 +68,13 @@ export function CaptureForm({ locale = "zh" }: { locale?: Locale }) {
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const parsed = parseComposerContent(content);
+
+    formData.delete("content");
+    formData.set("url", parsed.url || "");
+    formData.set("text", parsed.text || "");
+    formData.set("note", normalizeFormText(formData.get("note")) || "");
+    formData.set("fileUrl", "");
 
     try {
       const response = await fetch("/api/captures", {
@@ -78,6 +93,11 @@ export function CaptureForm({ locale = "zh" }: { locale?: Locale }) {
 
       const result = (await response.json()) as { job?: { message?: string; status?: string } };
       form.reset();
+      setContent("");
+      setFileCount(0);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       setStatus(result.job?.message || t.saved);
       router.refresh();
     } catch (error) {
@@ -88,44 +108,115 @@ export function CaptureForm({ locale = "zh" }: { locale?: Locale }) {
   }
 
   return (
-    <form className="capture-form" onSubmit={handleSubmit}>
-      <div className="field">
-        <label htmlFor="url">{t.url}</label>
-        <input className="input" id="url" name="url" placeholder={t.urlPlaceholder} />
+    <form className={isSaving ? "capture-composer is-feeding" : "capture-composer"} onSubmit={handleSubmit}>
+      <PixiuMascot label={t.mascotLabel} />
+      <label className="sr-only" htmlFor="content">
+        {t.composerLabel}
+      </label>
+      <textarea
+        className="composer-input"
+        id="content"
+        name="content"
+        onChange={(event) => setContent(event.target.value)}
+        placeholder={t.placeholder}
+        value={content}
+      />
+
+      <div className="composer-footer">
+        <label className="composer-note" htmlFor="capture-note">
+          <span>{t.noteLabel}</span>
+          <input id="capture-note" name="note" placeholder={t.notePlaceholder} type="text" />
+        </label>
+
+        <div className="composer-tools">
+          <label className="composer-tool" htmlFor="files">
+            {t.addImages}
+          </label>
+          <input
+            accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/avif"
+            id="files"
+            multiple
+            name="files"
+            onChange={(event) => setFileCount(event.target.files?.length || 0)}
+            ref={fileInputRef}
+            type="file"
+          />
+          {fileCount > 0 ? (
+            <span className="attachment-count">
+              {fileCount} {t.imagesSelected}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="composer-actions">
+          <div className="detected-kinds" aria-label={t.detected}>
+            {detectedKinds.length > 0 ? (
+              detectedKinds.map((kind) => <span key={kind}>{getKindLabel(kind, t)}</span>)
+            ) : (
+              <span>{t.emptyHint}</span>
+            )}
+          </div>
+          <button className="button composer-submit" disabled={isSaving} type="submit">
+            {isSaving ? t.submitSaving : t.submit}
+          </button>
+        </div>
       </div>
-      <div className="field">
-        <label htmlFor="text">{t.text}</label>
-        <textarea
-          className="textarea"
-          id="text"
-          name="text"
-          placeholder={t.textPlaceholder}
-        />
-      </div>
-      <div className="field">
-        <label htmlFor="note">{t.note}</label>
-        <input className="input" id="note" name="note" placeholder={t.notePlaceholder} />
-      </div>
-      <div className="field">
-        <label htmlFor="files">{t.files}</label>
-        <input
-          accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/avif"
-          className="input file-input"
-          id="files"
-          multiple
-          name="files"
-          type="file"
-        />
-        <span className="field-hint">{t.filesHint}</span>
-      </div>
-      <div className="field">
-        <label htmlFor="fileUrl">{t.fileUrl}</label>
-        <input className="input" id="fileUrl" name="fileUrl" placeholder={t.fileUrlPlaceholder} />
-      </div>
-      <button className="button" disabled={isSaving} type="submit">
-        {isSaving ? t.submitSaving : t.submit}
-      </button>
+
       {status ? <p className="meta">{status}</p> : null}
     </form>
   );
+}
+
+function PixiuMascot({ label }: { label: string }) {
+  return (
+    <div className="pixiu-mascot" aria-label={label} role="img">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img alt="" aria-hidden="true" height={180} src="/images/pixiu-feeder.png" width={180} />
+    </div>
+  );
+}
+
+type DetectedKind = "link" | "text" | "image";
+
+function parseComposerContent(value: string) {
+  const text = value.trim();
+  const urls = extractUrls(text);
+  const url = urls[0] || null;
+  const body = url ? text.replace(url, "").trim() : text;
+
+  return {
+    url,
+    text: body || null,
+  };
+}
+
+function getDetectedKinds(content: string, fileCount: number) {
+  const kinds: DetectedKind[] = [];
+  const parsed = parseComposerContent(content);
+
+  if (parsed.url) {
+    kinds.push("link");
+  }
+
+  if (parsed.text) {
+    kinds.push("text");
+  }
+
+  if (fileCount > 0) {
+    kinds.push("image");
+  }
+
+  return kinds;
+}
+
+function extractUrls(value: string) {
+  return Array.from(new Set(value.match(/https?:\/\/[^\s)）\]}>"']+/g) || []));
+}
+
+function normalizeFormText(value: FormDataEntryValue | null) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getKindLabel(kind: DetectedKind, t: Record<string, string>) {
+  return t[kind];
 }

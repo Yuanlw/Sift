@@ -85,6 +85,7 @@ Sift 不绑定 Supabase 或 OpenAI 官方服务。
 - [部署方式](docs/deployment.md)
 - [Phase 0 可执行计划](docs/phase-0-plan.md)
 - [Capture-first Roadmap](docs/capture-first-roadmap.md)
+- [Mobile-first Capture Roadmap](docs/mobile-capture-roadmap.md)
 - [Agent API / MCP 接入](docs/agent-api.md)
 - [知识库规则](prompts/wiki-maintenance.md)
 - [资料摄入提示词](prompts/ingestion.md)

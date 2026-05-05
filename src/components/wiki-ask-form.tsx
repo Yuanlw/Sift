@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { FormattedAnswer } from "@/components/formatted-answer";
 import type { Locale } from "@/lib/i18n";
 
@@ -36,6 +37,7 @@ interface WikiAnswer {
 }
 
 export function WikiAskForm({ locale = "zh", slug }: { locale?: Locale; slug: string }) {
+  const router = useRouter();
   const t = copy[locale];
   const [answer, setAnswer] = useState<WikiAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +71,7 @@ export function WikiAskForm({ locale = "zh", slug }: { locale?: Locale; slug: st
 
       setAnswer(result);
       form.reset();
+      router.refresh();
     } finally {
       setIsLoading(false);
     }

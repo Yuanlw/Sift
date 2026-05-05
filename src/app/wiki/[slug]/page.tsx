@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { WikiArchiveActions } from "@/components/wiki-archive-actions";
 import { WikiAskForm } from "@/components/wiki-ask-form";
 import { query } from "@/lib/db";
 import { formatDateTime, getLocale, localeText } from "@/lib/i18n";
@@ -19,6 +20,13 @@ interface WikiDetailRow {
   source_id: string | null;
   source_title: string | null;
   original_url: string | null;
+}
+
+interface AskHistoryRow {
+  id: string;
+  question: string;
+  answer: string;
+  created_at: string;
 }
 
 async function loadWikiPage(slug: string, userId: string) {
@@ -47,6 +55,23 @@ async function loadWikiPage(slug: string, userId: string) {
   return result.rows[0] || null;
 }
 
+async function loadAskHistories(wikiPageId: string, userId: string) {
+  const result = await query<AskHistoryRow>(
+    `
+      select id, question, answer, created_at
+      from ask_histories
+      where user_id = $1
+        and scope_type = 'wiki_page'
+        and scope_id = $2
+      order by created_at desc
+      limit 5
+    `,
+    [userId, wikiPageId],
+  );
+
+  return result.rows;
+}
+
 export default async function WikiDetailPage({ params }: { params: { slug: string } }) {
   const locale = getLocale();
   const userContext = getUserContextFromHeaders();
@@ -66,6 +91,7 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
     userId: userContext.userId,
     wikiPageId: page.id,
   });
+  const askHistories = await loadAskHistories(page.id, userContext.userId);
 
   return (
     <>
@@ -93,6 +119,11 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
           <div className="panel">
             <h3>{localeText(locale, "状态", "Status")}</h3>
             <p>{getWikiStatusLabel(page.status, locale)}</p>
+            <WikiArchiveActions
+              isArchived={page.status === "archived"}
+              locale={locale}
+              slug={page.slug}
+            />
           </div>
           <div className="panel">
             <h3>{localeText(locale, "来源", "Source")}</h3>
@@ -115,6 +146,24 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
               <p>{localeText(locale, "暂时没有发现明显相似的知识页。", "No obviously similar wiki pages found yet.")}</p>
             )}
           </div>
+          <div className="panel">
+            <h3>{localeText(locale, "历史问答", "Ask history")}</h3>
+            {askHistories.length > 0 ? (
+              <div className="ask-history-list">
+                {askHistories.map((item) => (
+                  <details className="ask-history-item" key={item.id}>
+                    <summary>
+                      <strong>{item.question}</strong>
+                      <span className="meta">{formatDateTime(item.created_at, locale)}</span>
+                    </summary>
+                    <p>{toAnswerPreview(item.answer)}</p>
+                  </details>
+                ))}
+              </div>
+            ) : (
+              <p>{localeText(locale, "还没有围绕这页提问。", "No questions about this page yet.")}</p>
+            )}
+          </div>
         </aside>
 
         <article className="document-view">
@@ -127,9 +176,13 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
   );
 }
 
+function toAnswerPreview(answer: string) {
+  return answer.replace(/\s+/g, " ").trim().slice(0, 360);
+}
+
 function getWikiStatusLabel(status: WikiPageStatus, locale: ReturnType<typeof getLocale>) {
   const labels: Record<WikiPageStatus, string> = {
-    draft: localeText(locale, "草稿", "Draft"),
+    draft: localeText(locale, "自动整理", "Auto-organized"),
     published: localeText(locale, "已发布", "Published"),
     archived: localeText(locale, "已归档", "Archived"),
   };

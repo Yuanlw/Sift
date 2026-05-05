@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { inngest } from "@/lib/inngest/client";
 import { writeAuditLog } from "@/lib/audit";
-import { query } from "@/lib/db";
+import { CaptureValidationError, createCapture } from "@/lib/captures/create-capture";
 import { getServerEnv, MissingEnvError } from "@/lib/env";
-import { processCaptureById } from "@/lib/processing/process-capture";
-import { isRemoteImageUrl, saveCaptureUploads, UploadValidationError } from "@/lib/upload-storage";
+import { saveCaptureUploads, UploadValidationError } from "@/lib/upload-storage";
 import { getUserContextFromRequest } from "@/lib/user-context";
-import type { Capture, ProcessingJob, RawAttachment } from "@/types/database";
 
 const textInput = z
   .string()
@@ -43,81 +40,41 @@ export async function POST(request: Request) {
     const body = createCaptureSchema.parse(parsedRequest.payload);
     const env = getServerEnv();
     const userContext = getUserContextFromRequest(request);
-    const normalizedFileUrl = normalizeRemoteImageUrl(body.fileUrl);
-    const attachments = normalizeAttachments(normalizedFileUrl, body.attachments, parsedRequest.source);
-    const normalizedUrl = normalizeHttpUrl(body.url);
-    const type = normalizedUrl ? "link" : attachments.length > 0 && !body.text ? "image" : "text";
-    const rawText = normalizedUrl ? body.text : [body.text, body.url].filter(Boolean).join("\n\n") || null;
-
-    if (!normalizedUrl && !rawText && attachments.length === 0) {
-      return NextResponse.json({ error: "请提供有效链接、文本或图片附件。" }, { status: 400 });
-    }
-
-    const rawPayload = {
+    const result = await createCapture({
       url: body.url,
-      normalizedUrl,
       text: body.text,
       note: body.note,
       fileUrl: body.fileUrl,
-      normalizedFileUrl,
-      attachments,
-    };
-
-    const captureResult = await query<Capture>(
-      `
-        insert into captures (
-          user_id, type, raw_url, raw_text, file_url, raw_payload, raw_attachments, note, status
-        )
-        values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, 'queued')
-        returning *
-      `,
-      [
-        userContext.userId,
-        type,
-        normalizedUrl,
-        rawText,
-        normalizedFileUrl || attachments[0]?.url || null,
-        JSON.stringify(rawPayload),
-        JSON.stringify(attachments),
-        body.note,
-      ],
-    );
-    const capture = captureResult.rows[0];
-
-    const jobResult = await query<ProcessingJob>(
-      `
-        insert into processing_jobs (capture_id, user_id, job_type, status, current_step)
-        values ($1, $2, 'process_capture', 'queued', 'queued')
-        returning *
-      `,
-      [capture.id, userContext.userId],
-    );
-    const job = jobResult.rows[0];
-
-    const dispatcher = env.JOB_DISPATCHER;
-    const dispatch = await dispatchProcessingJob(capture.id, job.id, dispatcher, type);
+      attachments: body.attachments,
+      attachmentSource: parsedRequest.source,
+      sourceApp: parsedRequest.source,
+    }, {
+      dispatcher: env.JOB_DISPATCHER,
+      userId: userContext.userId,
+    });
     await writeAuditLog({
       userId: userContext.userId,
       action: "capture.create",
       resourceType: "capture",
-      resourceId: capture.id,
+      resourceId: result.capture.id,
       status: "success",
       request,
       metadata: {
-        type,
-        dispatcher,
+        type: result.type,
+        dispatcher: env.JOB_DISPATCHER,
+        input_kinds: result.inputKinds,
         user_context_source: userContext.source,
-        attachment_count: attachments.length,
+        attachment_count: body.attachments.length,
       },
     });
 
     return NextResponse.json({
-      capture,
+      capture: result.capture,
       job: {
-        dispatcher,
-        id: job.id,
-        status: dispatch.status,
-        message: dispatch.message,
+        dispatcher: env.JOB_DISPATCHER,
+        id: result.job.id,
+        status: result.dispatch.status,
+        message: result.dispatch.message,
       },
     }, { status: 201 });
   } catch (error) {
@@ -136,6 +93,10 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof UploadValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (error instanceof CaptureValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
@@ -166,125 +127,5 @@ async function parseCaptureRequest(request: Request) {
       fileUrl: formData.get("fileUrl"),
       attachments: uploadedAttachments,
     },
-  };
-}
-
-function normalizeAttachments(
-  fileUrl: string | null,
-  attachments: RawAttachment[],
-  source: "json" | "multipart",
-) {
-  const normalized = attachments
-    .map((attachment) => normalizeAttachment(attachment, source))
-    .filter((attachment): attachment is RawAttachment => Boolean(attachment));
-
-  if (fileUrl && isRemoteImageUrl(fileUrl) && !normalized.some((attachment) => attachment.url === fileUrl)) {
-    normalized.unshift({
-      kind: "image",
-      url: fileUrl,
-      name: null,
-      mime_type: null,
-      size_bytes: null,
-      storage: "remote",
-    });
-  }
-
-  return normalized;
-}
-
-function normalizeRemoteImageUrl(url: string | null) {
-  return url && isRemoteImageUrl(url) ? url : null;
-}
-
-function normalizeAttachment(attachment: RawAttachment, source: "json" | "multipart") {
-  if (source === "multipart" && attachment.storage === "local") {
-    return attachment;
-  }
-
-  if (!isRemoteImageUrl(attachment.url)) {
-    return null;
-  }
-
-  return {
-    ...attachment,
-    kind: "image" as const,
-    storage: "remote" as const,
-  };
-}
-
-function normalizeHttpUrl(url: string | null) {
-  if (!url) {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
-async function dispatchProcessingJob(
-  captureId: string,
-  jobId: string,
-  dispatcher: "none" | "inngest" | "inline",
-  captureType: "link" | "text" | "image",
-) {
-  if (dispatcher === "inngest") {
-    try {
-      await inngest.send({
-        name: "capture/process.requested",
-        data: {
-          captureId,
-        },
-      });
-      return { status: "dispatched" };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown dispatch error";
-      await query(
-        `
-          update processing_jobs
-          set current_step = 'dispatch_failed', error_message = $2
-          where id = $1
-        `,
-        [jobId, message],
-      );
-      return {
-        status: "queued",
-        message: `资料已保存，但任务派发暂时失败：${message}`,
-      };
-    }
-  }
-
-  if (dispatcher === "inline") {
-    setTimeout(() => {
-      void processCaptureById(captureId).catch(async (error) => {
-        const message = error instanceof Error ? error.message : "Unknown processing error";
-        console.error(`Capture processing failed for ${captureId}:`, error);
-        await query(
-          `
-            update processing_jobs
-            set status = 'failed',
-                current_step = case when current_step = 'queued' then 'failed' else current_step end,
-                error_message = coalesce(error_message, $2),
-                finished_at = coalesce(finished_at, now())
-            where id = $1
-          `,
-          [jobId, message],
-        ).catch(() => undefined);
-      });
-    }, 0);
-
-    return {
-      status: "scheduled",
-      message: "已保存，后台处理已启动。",
-    };
-  }
-
-  return {
-    status: "queued",
-    message:
-      "已保存，等待后台处理。",
   };
 }

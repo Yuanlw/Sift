@@ -2,7 +2,7 @@ create extension if not exists vector;
 create extension if not exists pgcrypto;
 
 create type capture_type as enum ('link', 'text', 'image');
-create type capture_status as enum ('queued', 'processing', 'completed', 'failed');
+create type capture_status as enum ('queued', 'processing', 'completed', 'failed', 'ignored');
 create type job_type as enum ('process_capture');
 create type job_status as enum ('queued', 'running', 'completed', 'failed');
 create type wiki_page_status as enum ('draft', 'published', 'archived');
@@ -113,6 +113,52 @@ create table audit_logs (
   created_at timestamptz not null default now()
 );
 
+create table ask_histories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  scope_type text not null check (scope_type in ('wiki_page', 'source', 'global')),
+  scope_id uuid,
+  question text not null,
+  answer text not null,
+  citations jsonb not null default '[]'::jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table knowledge_discoveries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  discovery_type text not null check (discovery_type in ('new_source', 'related_wiki', 'duplicate_source', 'suggested_question')),
+  title text not null,
+  body text not null,
+  source_id uuid references sources(id) on delete cascade,
+  wiki_page_id uuid references wiki_pages(id) on delete cascade,
+  related_source_id uuid references sources(id) on delete set null,
+  related_wiki_page_id uuid references wiki_pages(id) on delete set null,
+  suggested_question text,
+  status text not null default 'new' check (status in ('new', 'seen', 'ignored')),
+  metadata jsonb not null default '{}'::jsonb,
+  dedupe_key text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, dedupe_key)
+);
+
+create table knowledge_recommendations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  source_id uuid not null references sources(id) on delete cascade,
+  trigger_source_id uuid references sources(id) on delete set null,
+  reason text not null,
+  score real not null default 0,
+  status text not null default 'active' check (status in ('active', 'dismissed')),
+  metadata jsonb not null default '{}'::jsonb,
+  dedupe_key text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, dedupe_key)
+);
+
 create index captures_user_created_idx on captures (user_id, created_at desc);
 create index processing_jobs_capture_idx on processing_jobs (capture_id);
 create index extracted_contents_capture_idx on extracted_contents (capture_id, created_at desc);
@@ -121,6 +167,13 @@ create index wiki_pages_user_updated_idx on wiki_pages (user_id, updated_at desc
 create index chunks_parent_idx on chunks (parent_type, parent_id);
 create index chunks_embedding_idx on chunks using ivfflat (embedding vector_cosine_ops);
 create index sources_user_original_url_idx on sources (user_id, original_url) where original_url is not null;
+create index sources_management_fts_idx on sources using gin (to_tsvector('simple', title || ' ' || coalesce(summary, '') || ' ' || extracted_text));
+create index wiki_pages_management_fts_idx on wiki_pages using gin (to_tsvector('simple', title || ' ' || content_markdown));
 create index chunks_content_fts_idx on chunks using gin (to_tsvector('simple', content));
 create index audit_logs_user_created_idx on audit_logs (user_id, created_at desc);
 create index audit_logs_resource_idx on audit_logs (resource_type, resource_id, created_at desc);
+create index ask_histories_scope_created_idx on ask_histories (user_id, scope_type, scope_id, created_at desc);
+create index knowledge_discoveries_user_created_idx on knowledge_discoveries (user_id, status, created_at desc);
+create index knowledge_discoveries_source_idx on knowledge_discoveries (source_id, created_at desc);
+create index knowledge_recommendations_user_rank_idx on knowledge_recommendations (user_id, status, updated_at desc, score desc);
+create index knowledge_recommendations_source_idx on knowledge_recommendations (source_id, updated_at desc);

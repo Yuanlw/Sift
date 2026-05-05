@@ -1,6 +1,8 @@
 import { chunkText, roughTokenCount } from "@/lib/chunk";
 import { query } from "@/lib/db";
 import { type ExtractedCaptureContent, extractCaptureText } from "@/lib/extraction";
+import { createKnowledgeDiscoveriesForProcessedCapture } from "@/lib/knowledge-discoveries";
+import { refreshKnowledgeRecommendationsForProcessedCapture } from "@/lib/knowledge-recommendations";
 import { embedTexts, generateKnowledgeDraft, type KnowledgeDraft } from "@/lib/models";
 import { toSlug } from "@/lib/slug";
 import { toSqlVector } from "@/lib/vector";
@@ -10,6 +12,15 @@ export async function processCaptureById(captureId: string) {
   const capture = await loadCapture(captureId);
   const job = await ensureProcessingJob(capture);
   let currentStep = "starting";
+
+  if (capture.status === "ignored") {
+    await markJobIgnored(job.id);
+    return {
+      captureId: capture.id,
+      sourceId: null,
+      wikiPageId: null,
+    };
+  }
 
   await query("update captures set status = 'processing' where id = $1", [capture.id]);
   await query(
@@ -85,7 +96,56 @@ export async function processCaptureById(captureId: string) {
     currentStep = "create_chunks";
     await runJobStep(job.id, currentStep, () => createChunks(capture, source, wikiPage, chunkInputs, embeddings));
 
-    await query("update captures set status = 'completed' where id = $1", [capture.id]);
+    currentStep = "create_discoveries";
+    try {
+      await runJobStep(job.id, currentStep, () =>
+        createKnowledgeDiscoveriesForProcessedCapture({
+          userId: capture.user_id,
+          source,
+          wikiPage,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown discovery error";
+      await markJobStep(job.id, currentStep, "failed", message);
+    }
+
+    currentStep = "refresh_recommendations";
+    try {
+      await runJobStep(job.id, currentStep, () =>
+        refreshKnowledgeRecommendationsForProcessedCapture({
+          userId: capture.user_id,
+          source,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown recommendation error";
+      await markJobStep(job.id, currentStep, "failed", message);
+    }
+
+    if (await isCaptureIgnored(capture.id)) {
+      await markJobIgnored(job.id);
+      return {
+        captureId: capture.id,
+        sourceId: source.id,
+        wikiPageId: wikiPage.id,
+      };
+    }
+
+    const completedCapture = await query<{ id: string }>(
+      "update captures set status = 'completed' where id = $1 and status <> 'ignored' returning id",
+      [capture.id],
+    );
+
+    if (!completedCapture.rows[0]) {
+      await markJobIgnored(job.id);
+      return {
+        captureId: capture.id,
+        sourceId: source.id,
+        wikiPageId: wikiPage.id,
+      };
+    }
+
     await query(
       `
         update processing_jobs
@@ -102,6 +162,15 @@ export async function processCaptureById(captureId: string) {
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown processing error";
+    if (await isCaptureIgnored(capture.id)) {
+      await markJobIgnored(job.id);
+      return {
+        captureId: capture.id,
+        sourceId: null,
+        wikiPageId: null,
+      };
+    }
+
     await query("update captures set status = 'failed' where id = $1", [capture.id]);
     await query(
       `
@@ -119,6 +188,30 @@ export async function processCaptureById(captureId: string) {
     );
     throw error;
   }
+}
+
+async function isCaptureIgnored(captureId: string) {
+  const result = await query<{ status: string }>("select status from captures where id = $1", [captureId]);
+  return result.rows[0]?.status === "ignored";
+}
+
+async function markJobIgnored(jobId: string) {
+  await query(
+    `
+      update processing_jobs
+      set status = 'completed',
+          current_step = 'ignored',
+          step_status = jsonb_build_object(
+            'ignored',
+            jsonb_build_object('status', 'completed', 'finished_at', now())
+          ),
+          error_message = null,
+          started_at = null,
+          finished_at = now()
+      where id = $1
+    `,
+    [jobId],
+  );
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: () => T): Promise<T> {
@@ -323,7 +416,19 @@ async function createWikiPage(
   );
 
   if (existing.rows[0]) {
-    return existing.rows[0];
+    const updated = await query<WikiPage>(
+      `
+        update wiki_pages
+        set title = $2,
+            content_markdown = $3,
+            updated_at = now()
+        where id = $1
+        returning *
+      `,
+      [existing.rows[0].id, input.title, input.markdown],
+    );
+
+    return updated.rows[0];
   }
 
   const slug = toSlug(input.title || source.title || source.id) || source.id;

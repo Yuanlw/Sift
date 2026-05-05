@@ -1,9 +1,15 @@
+import { AutoRefresh } from "@/components/auto-refresh";
+import { CaptureNoteForm } from "@/components/capture-note-form";
+import { CaptureSupplementForm } from "@/components/capture-supplement-form";
+import { CaptureTriageActions } from "@/components/capture-triage-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { query } from "@/lib/db";
 import { formatDateTime, getLocale, localeText, type Locale } from "@/lib/i18n";
 import { getUserContextFromHeaders } from "@/lib/user-context";
 import type { CaptureStatus, CaptureType, ExtractionStatus, JobStatus, Json, RawAttachment } from "@/types/database";
+
+type InputKind = "link" | "text" | "image";
 
 interface CaptureDetailRow {
   id: string;
@@ -110,15 +116,24 @@ export default async function CaptureDetailPage({ params }: { params: { id: stri
     notFound();
   }
 
+  const isFailed = isFailedCapture(capture);
+  const isIgnored = capture.status === "ignored";
+
   return (
     <>
+      <AutoRefresh enabled={isActiveCapture(capture)} />
       <section className="detail-hero">
         <Link className="back-link" href="/inbox">
           {localeText(locale, "返回收集箱", "Back to Inbox")}
         </Link>
         <div className="item-header">
-          <span className="type-pill">{getCaptureTypeLabel(capture.type, locale)}</span>
+          <span className="type-pill">{getCaptureTypeLabel(capture, locale)}</span>
           <h1>{getCaptureTitle(capture)}</h1>
+        </div>
+        <div className="capture-kinds" aria-label={localeText(locale, "输入类型", "Input types")}>
+          {getCaptureInputKinds(capture).map((kind) => (
+            <span key={kind}>{getInputKindLabel(kind, locale)}</span>
+          ))}
         </div>
         <div className="detail-meta">
           <span>{formatDateTime(capture.created_at, locale, true)}</span>
@@ -141,6 +156,15 @@ export default async function CaptureDetailPage({ params }: { params: { id: stri
               <StepBadge locale={locale} step={capture.current_step} />
             </div>
             {capture.error_message ? <p className="error-text">{capture.error_message}</p> : null}
+            {isFailed ? <p className="failure-hint">{getFailureHint(capture, locale)}</p> : null}
+            {isFailed || isIgnored ? (
+              <CaptureTriageActions
+                captureId={capture.id}
+                isIgnored={isIgnored}
+                locale={locale}
+                showSupplement={false}
+              />
+            ) : null}
           </div>
 
           <div className="panel">
@@ -168,6 +192,18 @@ export default async function CaptureDetailPage({ params }: { params: { id: stri
               <ArtifactLink href={capture.source_id ? `/sources/${capture.source_id}` : null} label={localeText(locale, "来源", "Source")} locale={locale} title={capture.source_title} />
               <ArtifactLink href={capture.wiki_slug ? `/wiki/${encodeURIComponent(capture.wiki_slug)}` : null} label={localeText(locale, "知识页", "Wiki")} locale={locale} title={capture.wiki_title} />
             </div>
+          </div>
+
+          <div className="panel" id="note">
+            <h3>{localeText(locale, "保存理由", "Saved for")}</h3>
+            <p>{localeText(locale, "只补备注不会重新处理资料，适合写下以后为什么要回来看。", "Saving a note does not retry processing; use it to remember why this matters.")}</p>
+            <CaptureNoteForm captureId={capture.id} initialNote={capture.note} locale={locale} />
+          </div>
+
+          <div className="panel" id="supplement">
+            <h3>{localeText(locale, "补充资料", "Supplement")}</h3>
+            <p>{localeText(locale, "补充复制正文或截图后，会在同一条资料里重新处理。", "Add copied text or screenshots, then retry processing on the same capture.")}</p>
+            <CaptureSupplementForm captureId={capture.id} locale={locale} />
           </div>
         </aside>
 
@@ -219,7 +255,7 @@ export default async function CaptureDetailPage({ params }: { params: { id: stri
               </p>
             ) : null}
             {capture.extraction_error_message ? (
-              <p className="error-text">{capture.extraction_error_message}</p>
+              <p className="error-text">{getExtractionErrorText(capture, locale)}</p>
             ) : null}
             <pre>{capture.extracted_text || localeText(locale, "还没有生成提取结果。", "No extraction result yet.")}</pre>
             {capture.extraction_metadata ? (
@@ -333,6 +369,7 @@ function getStepLabel(step: string | null, locale: Locale) {
     queued: localeText(locale, "等待处理", "Queued"),
     starting: localeText(locale, "启动任务", "Starting"),
     dispatch_failed: localeText(locale, "派发失败", "Dispatch failed"),
+    ignored: localeText(locale, "已忽略", "Ignored"),
     fetch_link: localeText(locale, "抓取链接", "Fetching link"),
     extracting: localeText(locale, "提取内容", "Extracting"),
     structuring: localeText(locale, "整理结构", "Structuring"),
@@ -353,19 +390,128 @@ function getStatusLabel(status: CaptureStatus | JobStatus, locale: Locale) {
     running: localeText(locale, "运行中", "Running"),
     completed: localeText(locale, "已完成", "Completed"),
     failed: localeText(locale, "失败", "Failed"),
+    ignored: localeText(locale, "已忽略", "Ignored"),
   };
 
   return labels[status] || status;
 }
 
-function getCaptureTypeLabel(type: CaptureType, locale: Locale) {
+function getCaptureTypeLabel(capture: CaptureDetailRow, locale: Locale) {
+  if (getCaptureInputKinds(capture).length > 1) {
+    return localeText(locale, "混合", "Mixed");
+  }
+
   const labels: Record<CaptureType, string> = {
     link: localeText(locale, "链接", "Link"),
     text: localeText(locale, "文本", "Text"),
     image: localeText(locale, "图片", "Image"),
   };
 
-  return labels[type];
+  return labels[capture.type];
+}
+
+function getInputKindLabel(kind: InputKind, locale: Locale) {
+  const labels: Record<InputKind, string> = {
+    link: localeText(locale, "链接", "Link"),
+    text: localeText(locale, "文本", "Text"),
+    image: localeText(locale, "图片", "Image"),
+  };
+
+  return labels[kind];
+}
+
+function getCaptureInputKinds(capture: CaptureDetailRow): InputKind[] {
+  const payload = getJsonObject(capture.raw_payload);
+  const payloadKinds = payload.inputKinds;
+
+  if (Array.isArray(payloadKinds)) {
+    const kinds = payloadKinds.filter((kind): kind is InputKind => kind === "link" || kind === "text" || kind === "image");
+
+    if (kinds.length > 0) {
+      return kinds;
+    }
+  }
+
+  const kinds: InputKind[] = [];
+
+  if (capture.raw_url) {
+    kinds.push("link");
+  }
+
+  if (capture.raw_text) {
+    kinds.push("text");
+  }
+
+  if (capture.raw_attachments.length > 0) {
+    kinds.push("image");
+  }
+
+  const fallbackKind: InputKind = capture.type === "image" ? "image" : capture.type === "link" ? "link" : "text";
+  return kinds.length > 0 ? kinds : [fallbackKind];
+}
+
+function getJsonObject(value: Json) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function isActiveCapture(capture: CaptureDetailRow) {
+  return (
+    capture.status !== "ignored" &&
+    (capture.status === "queued" ||
+      capture.status === "processing" ||
+      capture.job_status === "queued" ||
+      capture.job_status === "running")
+  );
+}
+
+function isFailedCapture(capture: CaptureDetailRow) {
+  return capture.status === "failed" || capture.job_status === "failed";
+}
+
+function getFailureHint(capture: CaptureDetailRow, locale: Locale) {
+  const platform = getRawPayloadPlatform(capture.raw_payload);
+
+  if (platform === "x") {
+    return localeText(
+      locale,
+      "X 链接已经保留。可以补充截图或复制正文，再重新处理；如果这条已经没有价值，也可以忽略。",
+      "The X link is saved. Add screenshots or copied text and retry, or ignore it if it is no longer useful.",
+    );
+  }
+
+  if (capture.raw_attachments.length > 0 && !capture.raw_text) {
+    return localeText(
+      locale,
+      "截图已经保留。可以补充一句说明帮助 OCR/整理，也可以直接重试。",
+      "Screenshots are saved. Add a short note to help OCR/structuring, or retry directly.",
+    );
+  }
+
+  return localeText(
+    locale,
+    "原始资料没有丢失。你可以补充正文或截图、重新处理，或把这条标记为忽略。",
+    "Original input is not lost. Supplement it, retry processing, or mark it ignored.",
+  );
+}
+
+function getExtractionErrorText(capture: CaptureDetailRow, locale: Locale) {
+  const platform = getRawPayloadPlatform(capture.raw_payload);
+
+  if (platform === "x") {
+    return localeText(
+      locale,
+      "X 平台正文暂时无法自动读取。链接已保存，可以补充截图或复制正文后重新处理。",
+      "X content could not be read automatically. The link is saved; add screenshots or copied text and retry.",
+    );
+  }
+
+  return capture.extraction_error_message;
+}
+
+function getRawPayloadPlatform(value: Json) {
+  const payload = getJsonObject(value);
+  const platform = payload.sourcePlatform;
+  return typeof platform === "string" ? platform : null;
 }
 
 function isUuid(value: string) {

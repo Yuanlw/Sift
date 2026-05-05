@@ -1,12 +1,15 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-export type CaptureStatus = "queued" | "processing" | "completed" | "failed";
+export type CaptureStatus = "queued" | "processing" | "completed" | "failed" | "ignored";
 export type CaptureType = "link" | "text" | "image";
 export type ExtractionStatus = "extracted" | "fallback";
 export type JobStatus = "queued" | "running" | "completed" | "failed";
 export type JobType = "process_capture";
 export type WikiPageStatus = "draft" | "published" | "archived";
 export type AuditStatus = "success" | "failure" | "denied";
+export type KnowledgeDiscoveryStatus = "new" | "seen" | "ignored";
+export type KnowledgeDiscoveryType = "new_source" | "related_wiki" | "duplicate_source" | "suggested_question";
+export type KnowledgeRecommendationStatus = "active" | "dismissed";
 
 export interface RawAttachment {
   kind: "image" | "audio" | "file";
@@ -94,6 +97,50 @@ export interface AuditLog {
   ip_address: string | null;
   user_agent: string | null;
   created_at: string;
+}
+
+export interface AskHistory {
+  id: string;
+  user_id: string;
+  scope_type: "wiki_page" | "source" | "global";
+  scope_id: string | null;
+  question: string;
+  answer: string;
+  citations: Json;
+  metadata: Json;
+  created_at: string;
+}
+
+export interface KnowledgeDiscovery {
+  id: string;
+  user_id: string;
+  discovery_type: KnowledgeDiscoveryType;
+  title: string;
+  body: string;
+  source_id: string | null;
+  wiki_page_id: string | null;
+  related_source_id: string | null;
+  related_wiki_page_id: string | null;
+  suggested_question: string | null;
+  status: KnowledgeDiscoveryStatus;
+  metadata: Json;
+  dedupe_key: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeRecommendation {
+  id: string;
+  user_id: string;
+  source_id: string;
+  trigger_source_id: string | null;
+  reason: string;
+  score: number;
+  status: KnowledgeRecommendationStatus;
+  metadata: Json;
+  dedupe_key: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Database {
@@ -302,6 +349,97 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["audit_logs"]["Insert"]>;
+      };
+      ask_histories: {
+        Row: {
+          id: string;
+          user_id: string;
+          scope_type: "wiki_page" | "source" | "global";
+          scope_id: string | null;
+          question: string;
+          answer: string;
+          citations: Json;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          scope_type: "wiki_page" | "source" | "global";
+          scope_id?: string | null;
+          question: string;
+          answer: string;
+          citations?: Json;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["ask_histories"]["Insert"]>;
+      };
+      knowledge_discoveries: {
+        Row: {
+          id: string;
+          user_id: string;
+          discovery_type: KnowledgeDiscoveryType;
+          title: string;
+          body: string;
+          source_id: string | null;
+          wiki_page_id: string | null;
+          related_source_id: string | null;
+          related_wiki_page_id: string | null;
+          suggested_question: string | null;
+          status: KnowledgeDiscoveryStatus;
+          metadata: Json;
+          dedupe_key: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          discovery_type: KnowledgeDiscoveryType;
+          title: string;
+          body: string;
+          source_id?: string | null;
+          wiki_page_id?: string | null;
+          related_source_id?: string | null;
+          related_wiki_page_id?: string | null;
+          suggested_question?: string | null;
+          status?: KnowledgeDiscoveryStatus;
+          metadata?: Json;
+          dedupe_key: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["knowledge_discoveries"]["Insert"]>;
+      };
+      knowledge_recommendations: {
+        Row: {
+          id: string;
+          user_id: string;
+          source_id: string;
+          trigger_source_id: string | null;
+          reason: string;
+          score: number;
+          status: KnowledgeRecommendationStatus;
+          metadata: Json;
+          dedupe_key: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          source_id: string;
+          trigger_source_id?: string | null;
+          reason: string;
+          score?: number;
+          status?: KnowledgeRecommendationStatus;
+          metadata?: Json;
+          dedupe_key: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["knowledge_recommendations"]["Insert"]>;
       };
     };
     Views: Record<string, never>;
