@@ -1,79 +1,79 @@
 # Sift
 
-Sift is a capture-first personal knowledge base.
+[English](README.en.md)
 
-It helps you save scattered links, text, screenshots, notes, and imported bookmarks, then turns them into traceable sources, readable wiki pages, and reusable context for search, Q&A, writing, research, and later agent workflows.
+Sift 是一个 capture-first 的个人知识库。
 
-中文定位：
+它帮你把散落在浏览器、聊天、社交平台、相册、稍后读和临时笔记里的链接、文本、截图、备注、收藏导入进来，再整理成可追溯的来源资料、可阅读的知识页，以及后续搜索、问答、写作、研究和 Agent 工作流能复用的上下文。
 
 > Sift 把你每天看到、想到、收藏的信息，沉淀成以后真正能用的知识资产。
 
-## Why Sift Exists
+## 为什么做 Sift
 
-Most people do not lack ways to collect information. They lack a reliable way to reuse it.
+很多人不缺收藏工具，真正缺的是复用能力。
 
-Typical information workflows break in the middle:
+常见的信息工作流是断裂的：
 
-1. You see something useful in a browser, chat, social feed, newsletter, PDF, or screenshot.
-2. You save it to bookmarks, notes, albums, read-later tools, or a private chat.
-3. Weeks later it is hard to find, hard to trust, and hard to turn into writing, decisions, or action.
+1. 你在浏览器、聊天、社交流、Newsletter、PDF 或截图里看到有价值的信息。
+2. 你把它存到书签、备忘录、相册、稍后读工具，或者发给自己的聊天窗口。
+3. 几周后，它很难被找回，也很难变成文章、判断、研究材料或行动。
 
-Sift closes that loop:
+Sift 想把这条链路闭合起来：
 
 ```text
-Capture -> Process -> Source -> Wiki -> Search / Ask / Review
+收集 -> 处理 -> 来源 -> 知识页 -> 搜索 / 问答 / 回顾
 ```
 
-The product is built around one principle:
+产品的核心原则是：
 
-> Saving must be fast. Understanding can happen in the background.
+> 保存必须快。理解可以在后台慢慢发生。
 
-## What It Does
+## 现在能做什么
 
-Sift currently supports a complete MVP loop:
+Sift 目前已经跑通一个完整的个人 MVP 闭环：
 
-- Fast capture for links, text, screenshots, and notes.
-- Mixed captures, such as a URL plus copied text plus images plus a reason for saving.
-- Inbox grouped by time, with today, active, failed, needs-note, ignored, and test-data views.
-- Background processing into extracted content, sources, wiki pages, chunks, and embeddings.
-- Failure handling with supplement, retry, ignore, archive, restore, and permanent delete flows.
-- Batch URL import, browser bookmark HTML import, and photo batch import.
-- Recent review, knowledge discoveries, duplicate hints, and persistent recommendations.
-- Whole-knowledge-base Ask and per-wiki-page Ask, with history.
-- Source and wiki management with filters, full-text search, semantic recall, load-more, archive, restore, and permanent delete.
-- Agent-facing API and MCP endpoint for external tools that need Sift context.
+- 快速保存链接、文本、截图和备注。
+- 支持混合收集，例如 URL + 复制正文 + 图片 + 保存理由。
+- 收集箱按时间组织，支持今日收集、处理中、失败、待补备注、已忽略、测试资料等视图。
+- 后台处理为提取内容、来源资料、知识页、检索片段和向量。
+- 失败资料可补充、重试、忽略；来源和知识页可归档、恢复、永久删除。
+- 支持批量 URL 导入、浏览器书签 HTML 导入、相册截图批量导入。
+- 支持近期回顾、知识发现、疑似重复提示和持久化推荐。
+- 支持全库问答和单个知识页问答，并保留历史问答。
+- 来源资料和知识页支持筛选、全文搜索、语义召回、加载更多、批量归档/恢复/删除。
+- 提供 Agent API 和 MCP endpoint，方便外部工具读取 Sift 的知识上下文。
 
-## Product Boundary
+## 产品边界
 
-Sift is not a general-purpose agent runtime.
+Sift 不是通用 Agent Runtime。
 
-It does not try to replace tools such as Claude Code, Codex, pi-mono, workflow agents, or automation platforms. Sift focuses on the long-term knowledge layer:
+它不试图替代 Claude Code、Codex、pi-mono、工作流 Agent 或自动化平台。Sift 聚焦在长期知识层：
 
-- Capture what the user sees, reads, saves, and thinks.
-- Preserve original material and traceable sources.
-- Organize knowledge into reusable pages and context chunks.
-- Help external agents retrieve trustworthy user-owned context.
+- 收集用户看到、读到、保存和想到的资料。
+- 保留原始材料和可追溯来源。
+- 把资料整理成可复用的知识页和上下文片段。
+- 帮外部 Agent 获取可信的、属于用户自己的长期知识。
 
-Complex execution should stay in dedicated agent workbenches. Sift supplies memory, sources, citations, and knowledge structure.
+复杂执行动作应该交给专门的 Agent 工作台。Sift 提供记忆、来源、引用和知识结构。
 
-## Current Status
+## 当前状态
 
-Sift is now a usable personal MVP:
+Sift 现在已经是一个可用的个人 MVP：
 
-- P0-P4: capture-first foundation, extraction, source/wiki generation, search, Ask, Agent API, MCP.
-- P5/P5.5: mobile-first capture composer, daily inbox triage, retry/supplement/ignore, notes.
-- P6: external collection import, including URLs, bookmarks, and photo batches.
-- P7: recent review, knowledge discoveries, recommendations, long-list management, archive/restore/delete, management search.
+- P0-P4：capture-first 基础、提取、来源/知识页生成、搜索、问答、Agent API、MCP。
+- P5/P5.5：手机优先的 Capture Composer、每日整理、补充/重试/忽略、备注。
+- P6：外部收藏导入，包括 URL、浏览器书签、相册截图。
+- P7：近期回顾、知识发现、推荐、长列表管理、归档/恢复/删除、资料管理搜索。
 
-The project is ready for personal daily testing and focused product review.
+它已经适合个人日常试用和持续产品 review。
 
-It is not yet a polished hosted SaaS product. Before wider public deployment, the main remaining work is stronger auth, production task queues, model provider adapters, evaluation sets, full regression testing, and a cleaner account/deployment story.
+它还不是成熟的公开托管 SaaS 产品。在更大范围部署前，还需要补强认证、多租户、生产任务队列、模型 provider、评测集、回归测试和更清晰的账号/部署体系。
 
-See [Project Review](docs/project-review.md) for the current completeness assessment.
+当前完整度评估见 [Project Review](docs/project-review.md)。
 
-## Quick Start
+## 快速启动
 
-For local development with Docker Postgres:
+本机开发，使用 Docker Postgres：
 
 ```bash
 npm install
@@ -83,13 +83,13 @@ npm run db:migrate
 npm run dev
 ```
 
-Open:
+打开：
 
 ```text
 http://127.0.0.1:3000
 ```
 
-Useful checks:
+常用检查：
 
 ```bash
 npm run typecheck
@@ -97,28 +97,28 @@ npm run lint
 npm run build
 ```
 
-For Docker Compose deployment and migration notes, see [Deployment](docs/deployment.md).
+Docker Compose 部署和迁移说明见 [Deployment](docs/deployment.md)。
 
-## Model Setup
+## 模型配置
 
-Sift uses an OpenAI-compatible model interface in the current implementation. Text generation, embeddings, and vision/OCR can be configured separately.
+当前实现使用 OpenAI-compatible 模型接口。文本生成、embedding 和视觉 OCR 可以分别配置。
 
-At a high level, you need:
+整体上需要：
 
-- A chat/text model for extraction, structuring, wiki generation, and answers.
-- An embedding model for retrieval.
-- Optionally, a vision model for image OCR.
+- 一个文本/聊天模型，用于提取、结构化、生成知识页和回答问题。
+- 一个 embedding 模型，用于检索。
+- 可选的视觉模型，用于图片 OCR。
 
-The project is designed so the model layer can evolve without changing the product boundary. Future provider work should support OpenAI, Anthropic, Google Gemini, Qwen, DeepSeek, Doubao, Zhipu, Kimi, local model gateways, and custom OpenAI-compatible services.
+模型层的目标是不改变产品边界的前提下持续演进。后续 provider 可支持 OpenAI、Anthropic、Google Gemini、Qwen、DeepSeek、豆包、智谱、Kimi、本地模型网关和自定义 OpenAI-compatible 服务。
 
-## Main Screens
+## 主要页面
 
-- `/` - home, recent review, recommendations, whole-knowledge-base Ask.
-- `/inbox` - fast capture, imports, daily triage, failed/active/ignored views.
-- `/sources` - cleaned source material with search, filters, archive, restore, and delete.
-- `/wiki` - generated knowledge pages with search, filters, archive, restore, delete, and page-level Ask.
+- `/` - 首页、近期回顾、推荐、全库问答。
+- `/inbox` - 快速收集、导入、每日整理、失败/处理中/已忽略视图。
+- `/sources` - 来源资料管理，支持搜索、筛选、归档、恢复和删除。
+- `/wiki` - 知识页管理，支持搜索、筛选、归档、恢复、删除和单页问答。
 
-## Documentation
+## 文档
 
 - [Project Review](docs/project-review.md)
 - [Capture-first Roadmap](docs/capture-first-roadmap.md)
@@ -131,12 +131,12 @@ The project is designed so the model layer can evolve without changing the produ
 - [Architecture](docs/architecture.md)
 - [Data Model](docs/data-model.md)
 
-## License
+## 协议
 
-Sift is source-available, not open source.
+Sift 是 source-available，不是 open source。
 
-You may use, study, modify, and run this project for personal, educational, research, evaluation, and internal organizational use, subject to the license terms.
+你可以在协议约束下，为个人、教育、研究、评估和组织内部使用而阅读、学习、修改和运行本项目。
 
-You may not offer Sift, a modified Sift, or a substantially similar hosted derivative as a public SaaS, managed service, paid hosted product, white-label product, or resale offering without explicit written permission.
+未经明确书面许可，不允许把 Sift、修改后的 Sift，或实质相似的托管衍生版本，对外提供为公开 SaaS、托管服务、付费产品、白标产品或转售服务。
 
-See [LICENSE](LICENSE) for the full terms. For commercial licensing or hosted-service permission, contact the project owner.
+完整条款见 [LICENSE](LICENSE)。如需商业授权或托管服务授权，请联系项目所有者。
