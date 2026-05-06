@@ -4,9 +4,10 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { CaptureTriageActions } from "@/components/capture-triage-actions";
 import Link from "next/link";
 import { query } from "@/lib/db";
-import { MissingEnvError } from "@/lib/env";
+import { getServerEnv, MissingEnvError } from "@/lib/env";
 import { formatDateTime, getLocale, localeText, type Locale } from "@/lib/i18n";
 import { loadKnowledgeDiscoveries, type KnowledgeDiscoveryView } from "@/lib/knowledge-discoveries";
+import { recoverInterruptedProcessingJobs } from "@/lib/processing/recover-processing";
 import { getUserContextFromHeaders } from "@/lib/user-context";
 import type { CaptureStatus, CaptureType, JobStatus, Json, RawAttachment } from "@/types/database";
 
@@ -188,6 +189,11 @@ export default async function InboxPage({ searchParams }: { searchParams?: { lim
 
   try {
     const userContext = getUserContextFromHeaders();
+    const env = getServerEnv();
+    await recoverInterruptedProcessingJobs({
+      dispatcher: env.JOB_DISPATCHER,
+      userId: userContext.userId,
+    });
     [captures, failedPreview, stats, discoveries] = await Promise.all([
       loadCaptureResults(userContext.userId, activeView, listLimit),
       loadCaptureResults(userContext.userId, "failed", 3),

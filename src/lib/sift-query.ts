@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { embedTexts } from "@/lib/models";
+import type { ModelCallContext } from "@/lib/model-usage";
 import { toSqlVector } from "@/lib/vector";
 import type { CaptureType, Json, WikiPageStatus } from "@/types/database";
 
@@ -116,9 +117,14 @@ interface AgentResourceRow {
   updated_at: string;
 }
 
-export async function retrieveHybridContexts(userId: string, searchQuery: string, limit = 8) {
+export async function retrieveHybridContexts(
+  userId: string,
+  searchQuery: string,
+  limit = 8,
+  modelContext?: Omit<ModelCallContext, "role" | "userId">,
+) {
   const [vectorRows, keywordRows] = await Promise.all([
-    retrieveVectorChunks(userId, searchQuery).catch(() => []),
+    retrieveVectorChunks(userId, searchQuery, modelContext).catch(() => []),
     retrieveKeywordChunks(userId, searchQuery),
   ]);
 
@@ -222,7 +228,10 @@ export function toAgentCitations(contexts: AgentContext[]): AgentCitation[] {
 }
 
 export async function queryAgentContext(input: { userId: string; query: string; limit?: number }) {
-  const contexts = await retrieveHybridContexts(input.userId, input.query, input.limit || 8);
+  const contexts = await retrieveHybridContexts(input.userId, input.query, input.limit || 8, {
+    stage: "agent",
+    purpose: "agent.query.embedding",
+  });
   const agentContexts = toAgentContexts(contexts);
 
   return {
@@ -428,8 +437,20 @@ export async function readAgentResource(userId: string, uri: string) {
   };
 }
 
-async function retrieveVectorChunks(userId: string, searchQuery: string) {
-  const [embedding] = await embedTexts([searchQuery]);
+async function retrieveVectorChunks(
+  userId: string,
+  searchQuery: string,
+  modelContext?: Omit<ModelCallContext, "role" | "userId">,
+) {
+  const [embedding] = await embedTexts([searchQuery], {
+    userId,
+    role: "embedding",
+    stage: modelContext?.stage || "retrieval",
+    purpose: modelContext?.purpose || "retrieval.semantic_query",
+    resourceType: modelContext?.resourceType,
+    resourceId: modelContext?.resourceId,
+    metadata: modelContext?.metadata,
+  });
 
   if (!embedding) {
     return [];

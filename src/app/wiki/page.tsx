@@ -106,7 +106,10 @@ async function loadSemanticWikiSlugs(userId: string, searchQuery: string) {
   }
 
   const contexts = await withTimeout(
-    retrieveHybridContexts(userId, searchQuery, 12).catch(() => []),
+    retrieveHybridContexts(userId, searchQuery, 12, {
+      stage: "management",
+      purpose: "management.wiki.embedding",
+    }).catch(() => []),
     1200,
     [],
   );

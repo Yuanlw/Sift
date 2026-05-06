@@ -5,7 +5,9 @@ import { CaptureTriageActions } from "@/components/capture-triage-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { query } from "@/lib/db";
+import { getServerEnv } from "@/lib/env";
 import { formatDateTime, getLocale, localeText, type Locale } from "@/lib/i18n";
+import { recoverInterruptedProcessingJobs } from "@/lib/processing/recover-processing";
 import { getUserContextFromHeaders } from "@/lib/user-context";
 import type { CaptureStatus, CaptureType, ExtractionStatus, JobStatus, Json, RawAttachment } from "@/types/database";
 
@@ -110,6 +112,13 @@ async function loadCapture(id: string) {
 
 export default async function CaptureDetailPage({ params }: { params: { id: string } }) {
   const locale = getLocale();
+  const env = getServerEnv();
+  const userContext = getUserContextFromHeaders();
+  await recoverInterruptedProcessingJobs({
+    dispatcher: env.JOB_DISPATCHER,
+    limit: 3,
+    userId: userContext.userId,
+  });
   const capture = await loadCapture(params.id);
 
   if (!capture) {
@@ -177,7 +186,7 @@ export default async function CaptureDetailPage({ params }: { params: { id: stri
           <div className="panel">
             <h3>处理步骤</h3>
             <div className="step-list">
-              {PROCESSING_STEPS.map((step) => (
+              {getProcessingSteps(capture).map((step) => (
                 <div className="step-item" key={step}>
                   <span>{getStepLabel(step, locale)}</span>
                   <strong>{getStepState(capture.step_status, step, locale)}</strong>
@@ -340,7 +349,6 @@ function isImageAttachment(attachment: RawAttachment) {
 }
 
 const PROCESSING_STEPS = [
-  "fetch_link",
   "extracting",
   "structuring",
   "create_source",
@@ -348,6 +356,14 @@ const PROCESSING_STEPS = [
   "create_embeddings",
   "create_chunks",
 ];
+
+function getProcessingSteps(capture: CaptureDetailRow) {
+  if (capture.raw_url) {
+    return ["fetch_link", ...PROCESSING_STEPS.filter((step) => step !== "extracting")];
+  }
+
+  return PROCESSING_STEPS;
+}
 
 function getStepState(stepStatus: Json | null, step: string, locale: Locale) {
   if (!stepStatus || typeof stepStatus !== "object" || Array.isArray(stepStatus)) {
@@ -361,7 +377,21 @@ function getStepState(stepStatus: Json | null, step: string, locale: Locale) {
   }
 
   const status = state.status;
-  return typeof status === "string" ? getStatusLabel(status as CaptureStatus | JobStatus, locale) : localeText(locale, "等待中", "Pending");
+  if (step === "create_embeddings" && status === "failed" && isStepCompleted(stepStatus, "create_chunks")) {
+    return localeText(locale, "已降级", "Degraded");
+  }
+
+  return typeof status === "string" ? getStatusLabel(status, locale) : localeText(locale, "等待中", "Pending");
+}
+
+function isStepCompleted(stepStatus: Json, step: string) {
+  if (!stepStatus || typeof stepStatus !== "object" || Array.isArray(stepStatus)) {
+    return false;
+  }
+
+  const state = stepStatus[step];
+
+  return Boolean(state && typeof state === "object" && !Array.isArray(state) && state.status === "completed");
 }
 
 function getStepLabel(step: string | null, locale: Locale) {
@@ -369,6 +399,7 @@ function getStepLabel(step: string | null, locale: Locale) {
     queued: localeText(locale, "等待处理", "Queued"),
     starting: localeText(locale, "启动任务", "Starting"),
     dispatch_failed: localeText(locale, "派发失败", "Dispatch failed"),
+    recovered: localeText(locale, "恢复处理", "Recovered"),
     ignored: localeText(locale, "已忽略", "Ignored"),
     fetch_link: localeText(locale, "抓取链接", "Fetching link"),
     extracting: localeText(locale, "提取内容", "Extracting"),
@@ -383,13 +414,14 @@ function getStepLabel(step: string | null, locale: Locale) {
   return labels[step || "queued"] || step || localeText(locale, "等待处理", "Queued");
 }
 
-function getStatusLabel(status: CaptureStatus | JobStatus, locale: Locale) {
+function getStatusLabel(status: string, locale: Locale) {
   const labels: Record<string, string> = {
     queued: localeText(locale, "等待中", "Queued"),
     processing: localeText(locale, "处理中", "Processing"),
     running: localeText(locale, "运行中", "Running"),
     completed: localeText(locale, "已完成", "Completed"),
     failed: localeText(locale, "失败", "Failed"),
+    skipped: localeText(locale, "已降级", "Degraded"),
     ignored: localeText(locale, "已忽略", "Ignored"),
   };
 

@@ -1,4 +1,6 @@
-import { getServerEnv } from "@/lib/env";
+import { getEffectiveModelConfig } from "@/lib/model-settings";
+import { countTextChars, recordModelCall, type ModelCallContext, type ModelUsagePayload } from "@/lib/model-usage";
+import { assertSmartQuotaAvailable, estimateSmartQuotaCredits } from "@/lib/smart-quota";
 import {
   getFilenameFromCaptureUploadUrl,
   getMimeTypeFromCaptureUploadFilename,
@@ -25,7 +27,11 @@ type ChatContent =
   | null
   | undefined;
 
-export async function extractTextFromImages(input: { fileUrl?: string | null; attachments: RawAttachment[] }) {
+export async function extractTextFromImages(input: {
+  attachments: RawAttachment[];
+  fileUrl?: string | null;
+  modelContext?: ModelCallContext;
+}) {
   const imageAttachments = collectImageAttachments(input);
 
   if (imageAttachments.length === 0) {
@@ -41,43 +47,102 @@ export async function extractTextFromImages(input: { fileUrl?: string | null; at
     ...imageContents,
   ];
 
-  const env = getServerEnv();
-  const response = await fetch(`${trimTrailingSlash(env.MODEL_VISION_BASE_URL)}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.MODEL_VISION_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env.MODEL_VISION_MODEL,
-      messages: [
-        {
-          role: "user",
-          content,
+  const config = await getEffectiveModelConfig(input.modelContext?.userId);
+  const quotaContext = input.modelContext
+    ? {
+        ...input.modelContext,
+        metadata: {
+          ...input.modelContext.metadata,
+          image_count: imageAttachments.length,
         },
-      ],
-      temperature: 0,
-      stream: false,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Vision OCR request failed: ${response.status} ${await response.text()}`);
-  }
-
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: ChatContent; reasoning_content?: string | null } }>;
-  };
-  const text = extractOcrText(data);
-
-  if (!text) {
-    throw new Error("Vision OCR response did not include text content.");
-  }
-
-  return {
-    text,
+      }
+    : input.modelContext;
+  const inputChars = countTextChars({
     imageCount: imageAttachments.length,
+    prompt: "ocr",
+  });
+  if (input.modelContext?.userId) {
+    await assertSmartQuotaAvailable(
+      input.modelContext.userId,
+      config.mode,
+      estimateSmartQuotaCredits({
+        context: quotaContext!,
+        inputChars,
+        requestCount: 1,
+      }),
+    );
+  }
+  const startedAt = Date.now();
+  const body = {
+    model: config.vision.model,
+    messages: [
+      {
+        role: "user",
+        content,
+      },
+    ],
+    temperature: 0,
+    stream: false,
   };
+
+  try {
+    const response = await fetch(`${trimTrailingSlash(config.vision.baseUrl)}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.vision.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Vision OCR request failed: ${response.status} ${await response.text()}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: ChatContent; reasoning_content?: string | null } }>;
+      usage?: ModelUsagePayload;
+    };
+    const text = extractOcrText(data);
+
+    if (!text) {
+      throw new Error("Vision OCR response did not include text content.");
+    }
+
+    await recordModelCall({
+      baseUrl: config.vision.baseUrl,
+      context: quotaContext,
+      durationMs: Date.now() - startedAt,
+      inputChars,
+      model: config.vision.model,
+      modelMode: config.mode,
+      outputChars: text.length,
+      provider: config.provider,
+      requestCount: 1,
+      status: "success",
+      usage: data.usage || null,
+    });
+
+    return {
+      text,
+      imageCount: imageAttachments.length,
+    };
+  } catch (error) {
+    await recordModelCall({
+      baseUrl: config.vision.baseUrl,
+      context: quotaContext,
+      durationMs: Date.now() - startedAt,
+      errorMessage: error instanceof Error ? error.message : "Unknown OCR error",
+      inputChars,
+      model: config.vision.model,
+      modelMode: config.mode,
+      outputChars: null,
+      provider: config.provider,
+      requestCount: 1,
+      status: "failed",
+    });
+    throw error;
+  }
 }
 
 function extractOcrText(data: { choices?: Array<{ message?: { content?: ChatContent; reasoning_content?: string | null } }> }) {

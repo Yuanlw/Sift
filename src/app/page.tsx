@@ -119,27 +119,49 @@ export default async function HomePage() {
     userId: userContext.userId,
     limit: 5,
   }).catch(() => []);
+  const totalCaptures = Number(stats?.captures || 0);
+  const reviewCount = discoveries.length + recommendations.length;
 
   return (
-    <>
-      <section className="hero">
-        <div className="eyebrow">{localeText(locale, "知识底座", "Knowledge Layer")}</div>
-        <h1>{localeText(locale, "把散落的信息，沉淀成可复用知识。", "Turn scattered captures into reusable knowledge.")}</h1>
-        <p>
-          {localeText(
-            locale,
-            "Sift 先把保存体验做顺：链接、文本和图片进入收集箱，后台再逐步整理成来源资料和可追溯的知识页。",
-            "Sift starts with capture: links, text, and images enter the inbox first, then background jobs turn them into traceable sources and wiki pages.",
-          )}
-        </p>
-        <Link className="button" href="/inbox">
-          {localeText(locale, "进入收集箱", "Open Inbox")}
-        </Link>
+    <div className="home-page">
+      <section className="home-hero" aria-label={localeText(locale, "Sift 工作台", "Sift workspace")}>
+        <div className="home-hero-copy">
+          <div className="eyebrow">{localeText(locale, "近期回顾", "Recent Review")}</div>
+          <h1>{localeText(locale, "你的知识库，今天已经被重新看过一遍。", "Your library has already been reviewed today.")}</h1>
+          <p>
+            {localeText(
+              locale,
+              "保存只是入口。Sift 会把新资料放回整个知识库里，找出值得回看的内容、可能重复的来源，以及可以更新的知识页。",
+              "Capture is only the entry point. Sift places new material back into the whole library and surfaces what is worth revisiting, duplicative, or ready to update.",
+            )}
+          </p>
+          <div className="home-hero-actions">
+            <Link className="button" href="/inbox">
+              {localeText(locale, "投喂新资料", "Capture something")}
+            </Link>
+            <Link className="button button-secondary" href="#ask">
+              {localeText(locale, "问整个知识库", "Ask the library")}
+            </Link>
+          </div>
+        </div>
+        <div className="home-hero-card" aria-label={localeText(locale, "知识状态摘要", "Knowledge summary")}>
+          <span>{localeText(locale, "当前状态", "Current state")}</span>
+          <strong>
+            {reviewCount > 0
+              ? localeText(locale, `${reviewCount} 个发现等待处理`, `${reviewCount} items need review`)
+              : localeText(locale, "没有紧急待处理发现", "No urgent discoveries")}
+          </strong>
+          <p>
+            {totalCaptures > 0
+              ? localeText(locale, `已经收集 ${totalCaptures} 条资料，Sift 会在新内容进入后继续更新回顾。`, `${totalCaptures} captures saved. Sift updates this review when new material arrives.`)
+              : localeText(locale, "先保存几条链接、文字或图片，近期回顾会从这里长出来。", "Save a few links, notes, or images first; the review will grow from here.")}
+          </p>
+        </div>
       </section>
 
-      <section className="stats-grid" aria-label={localeText(locale, "知识库状态", "Knowledge base status")}>
+      <section className="home-stat-strip" aria-label={localeText(locale, "知识库状态", "Knowledge base status")}>
         <StatCard label={localeText(locale, "收集", "Captures")} value={stats?.captures} href="/inbox" />
-        <StatCard label={localeText(locale, "已完成", "Completed")} value={stats?.completed_captures} href="/inbox" />
+        <StatCard label={localeText(locale, "已处理", "Processed")} value={stats?.completed_captures} href="/inbox" />
         <StatCard label={localeText(locale, "来源", "Sources")} value={stats?.sources} href="/sources" />
         <StatCard label={localeText(locale, "知识页", "Wiki Pages")} value={stats?.wiki_pages} href="/wiki" />
       </section>
@@ -157,12 +179,12 @@ export default async function HomePage() {
         summaryItems={[
           {
             href: "/inbox?view=today",
-            label: localeText(locale, "今天收集", "Captured today"),
+            label: localeText(locale, "今日收集", "Captured today"),
             value: todayReview.stats?.today_captures || "0",
           },
           {
             href: "/inbox",
-            label: localeText(locale, "已处理", "Processed"),
+            label: localeText(locale, "整理完成", "Processed"),
             value: todayReview.stats?.today_completed || "0",
           },
           {
@@ -178,31 +200,45 @@ export default async function HomePage() {
         ]}
       />
 
-      <KnowledgeAskForm
-        histories={askHistories.map((item) => ({
-          id: item.id,
-          question: item.question,
-          answer: item.answer,
-          createdAt: item.created_at,
-        }))}
-        locale={locale}
-      />
+      <section className="home-two-column" id="ask">
+        <KnowledgeAskForm
+          histories={askHistories.map((item) => ({
+            id: item.id,
+            question: item.question,
+            answer: item.answer,
+            createdAt: item.created_at,
+          }))}
+          locale={locale}
+        />
 
-      <section className="grid" aria-label={localeText(locale, "核心模块", "Core modules")}>
-        <div className="panel">
-          <h3>{localeText(locale, "收集箱", "Inbox")}</h3>
-          <p>{localeText(locale, "接收链接、文本和本地图片，先快速保存原始资料。", "Capture links, text, and local images quickly.")}</p>
-        </div>
-        <div className="panel">
-          <h3>{localeText(locale, "来源资料", "Sources")}</h3>
-          <p>{localeText(locale, "保存清理后的单份资料，并保留可追溯上下文。", "Store cleaned individual sources with traceable context.")}</p>
-        </div>
-        <div className="panel">
-          <h3>{localeText(locale, "知识页", "Wiki")}</h3>
-          <p>{localeText(locale, "把来源资料沉淀成可阅读、可追问、可合并的知识页。", "Turn sources into readable, askable, mergeable wiki pages.")}</p>
-        </div>
+        <aside className="home-workflow-panel" aria-label={localeText(locale, "Sift 工作流", "Sift workflow")}>
+          <div className="eyebrow">{localeText(locale, "工作流", "Workflow")}</div>
+          <h2>{localeText(locale, "从剪藏到回顾，不需要你主动整理。", "From capture to review, without manual filing.")}</h2>
+          <div className="home-workflow-list">
+            <Link href="/inbox">
+              <span>01</span>
+              <strong>{localeText(locale, "随手保存", "Capture")}</strong>
+              <small>{localeText(locale, "链接、文字、图片先进收集箱", "Links, text, and images enter the inbox")}</small>
+            </Link>
+            <Link href="/sources">
+              <span>02</span>
+              <strong>{localeText(locale, "沉淀来源", "Clean sources")}</strong>
+              <small>{localeText(locale, "保留原始上下文和可追溯摘要", "Keep traceable context and summaries")}</small>
+            </Link>
+            <Link href="/wiki">
+              <span>03</span>
+              <strong>{localeText(locale, "生成知识页", "Build wiki")}</strong>
+              <small>{localeText(locale, "把零散资料变成可追问页面", "Turn fragments into askable pages")}</small>
+            </Link>
+            <Link href="/#discoveries">
+              <span>04</span>
+              <strong>{localeText(locale, "自动回顾", "Review")}</strong>
+              <small>{localeText(locale, "发现重复、关联和需要重看的内容", "Surface duplicates, links, and useful revisits")}</small>
+            </Link>
+          </div>
+        </aside>
       </section>
-    </>
+    </div>
   );
 }
 

@@ -64,6 +64,7 @@ Sift 现在已经是一个可用的个人 MVP：
 - P5/P5.5：手机优先的 Capture Composer、每日整理、补充/重试/忽略、备注。
 - P6：外部收藏导入，包括 URL、浏览器书签、相册截图。
 - P7：近期回顾、知识发现、推荐、长列表管理、归档/恢复/删除、资料管理搜索。
+- P8：模型调用计量、模型策略文档、账号/模型/消耗设置中心、智能额度账本。
 
 它已经适合个人日常试用和持续产品 review。
 
@@ -101,13 +102,28 @@ Docker Compose 部署和迁移说明见 [Deployment](docs/deployment.md)。
 
 ## 模型配置
 
-当前实现使用 OpenAI-compatible 模型接口。文本生成、embedding 和视觉 OCR 可以分别配置。
+Sift 的模型设置现在走 `/settings` 页面，而不是让普通用户直接改 `.env`。
+
+页面里有两种模式：
+
+- 使用 Sift 默认模型：只展示能力、额度、消耗和健康状态，不展示底层供应商、模型名、endpoint 或密钥。
+- 使用自定义模型：用户自己配置 OpenAI-compatible 的文本模型、embedding 模型和视觉 OCR 模型，并可在页面验证配置是否可用。
 
 整体上需要：
 
 - 一个文本/聊天模型，用于提取、结构化、生成知识页和回答问题。
 - 一个 embedding 模型，用于检索。
 - 可选的视觉模型，用于图片 OCR。
+
+`.env` 中的模型变量只作为部署默认值或未来 SaaS 托管模型配置使用；对普通使用者来说，模型选择和密钥管理应该在设置中心完成。
+
+自定义模型 API Key 不会返回给前端。SaaS 或多人部署应配置 `SIFT_MODEL_KEY_ENCRYPTION_SECRET`，新保存的用户自定义模型 Key 会在服务端加密后写入数据库；本地单用户部署可以留空以降低配置复杂度。
+
+默认模型使用统一的智能额度。用户看到的是本月额度、已用、剩余和消耗去向；系统内部再按资料处理、图片识别、语义索引、知识问答和检索召回分项记账。自定义模型模式不扣 Sift 智能额度。
+
+SaaS 计费使用 Stripe Checkout。托管部署需要在 Stripe 后台创建订阅价格，并配置 `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、`STRIPE_PRICE_PERSONAL`、`STRIPE_PRICE_PRO`、`STRIPE_PRICE_TEAM` 和 `SIFT_APP_URL`。本地单租户可全部留空。
+
+正式提交 Stripe 审核前，还需要把公开网站准备完整：HTTPS 域名、真实联系邮箱、真实且一致的服务主体信息、价格页、Contact Us、Privacy Policy、Terms of Service 和 Refund Policy。Sift 已提供这些公开页面入口；部署时用 `SIFT_CONTACT_EMAIL`、`SIFT_BUSINESS_NAME`、`SIFT_BUSINESS_ADDRESS` 和 `SIFT_PRICE_LABEL_*` 替换占位信息。
 
 模型层的目标是不改变产品边界的前提下持续演进。后续 provider 可支持 OpenAI、Anthropic、Google Gemini、Qwen、DeepSeek、豆包、智谱、Kimi、本地模型网关和自定义 OpenAI-compatible 服务。
 
@@ -117,10 +133,12 @@ Docker Compose 部署和迁移说明见 [Deployment](docs/deployment.md)。
 - `/inbox` - 快速收集、导入、每日整理、失败/处理中/已忽略视图。
 - `/sources` - 来源资料管理，支持搜索、筛选、归档、恢复和删除。
 - `/wiki` - 知识页管理，支持搜索、筛选、归档、恢复、删除和单页问答。
+- `/settings` - 设置中心，查看账号/部署信息、模型配置、模型消耗和计费边界。
 
 ## 文档
 
 - [Project Review](docs/project-review.md)
+- [Model Strategy and Billing](docs/model-strategy-and-billing.md)
 - [Capture-first Roadmap](docs/capture-first-roadmap.md)
 - [Mobile-first Capture Roadmap](docs/mobile-capture-roadmap.md)
 - [Local Setup](docs/local-setup.md)

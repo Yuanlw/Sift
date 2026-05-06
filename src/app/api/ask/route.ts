@@ -5,6 +5,7 @@ import { query } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
 import { answerKnowledgeBaseQuestion } from "@/lib/models";
 import { retrieveHybridContexts, toLabeledContexts, type RetrievedContext } from "@/lib/sift-query";
+import { SmartQuotaExceededError } from "@/lib/smart-quota";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 const askSchema = z.object({
@@ -15,7 +16,10 @@ export async function POST(request: Request) {
   try {
     const body = askSchema.parse(await request.json());
     const userContext = getUserContextFromRequest(request);
-    const contexts = await retrieveHybridContexts(userContext.userId, body.question);
+    const contexts = await retrieveHybridContexts(userContext.userId, body.question, 8, {
+      stage: "ask",
+      purpose: "ask.global.embedding",
+    });
 
     if (contexts.length === 0) {
       const emptyAnswer = {
@@ -53,6 +57,13 @@ export async function POST(request: Request) {
     const labeledContexts = toLabeledContexts(contexts);
 
     const answer = await answerKnowledgeBaseQuestion({
+      modelContext: {
+        userId: userContext.userId,
+        stage: "ask",
+        role: "text",
+        purpose: "ask.global.answer",
+        resourceType: "knowledge_base",
+      },
       question: body.question,
       contexts: labeledContexts,
     });
@@ -123,6 +134,10 @@ export async function POST(request: Request) {
 
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0]?.message || "Invalid input" }, { status: 400 });
+    }
+
+    if (error instanceof SmartQuotaExceededError) {
+      return NextResponse.json({ code: "SMART_QUOTA_EXCEEDED", error: error.message }, { status: 402 });
     }
 
     const message = error instanceof Error ? error.message : "Unknown error";

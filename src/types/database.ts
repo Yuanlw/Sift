@@ -10,6 +10,9 @@ export type AuditStatus = "success" | "failure" | "denied";
 export type KnowledgeDiscoveryStatus = "new" | "seen" | "ignored";
 export type KnowledgeDiscoveryType = "new_source" | "related_wiki" | "duplicate_source" | "suggested_question";
 export type KnowledgeRecommendationStatus = "active" | "dismissed";
+export type ModelCallRole = "text" | "embedding" | "vision";
+export type ModelCallStage = "processing" | "ask" | "retrieval" | "management" | "agent";
+export type ModelCallStatus = "success" | "failed";
 
 export interface RawAttachment {
   kind: "image" | "audio" | "file";
@@ -141,6 +144,30 @@ export interface KnowledgeRecommendation {
   dedupe_key: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ModelCallLog {
+  id: string;
+  user_id: string;
+  stage: ModelCallStage;
+  role: ModelCallRole;
+  purpose: string;
+  provider: string;
+  model: string;
+  endpoint_host: string | null;
+  status: ModelCallStatus;
+  duration_ms: number | null;
+  request_count: number;
+  input_chars: number | null;
+  output_chars: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  resource_type: string | null;
+  resource_id: string | null;
+  error_message: string | null;
+  metadata: Json;
+  created_at: string;
 }
 
 export interface Database {
@@ -440,6 +467,55 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["knowledge_recommendations"]["Insert"]>;
+      };
+      model_call_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          stage: ModelCallStage;
+          role: ModelCallRole;
+          purpose: string;
+          provider: string;
+          model: string;
+          endpoint_host: string | null;
+          status: ModelCallStatus;
+          duration_ms: number | null;
+          request_count: number;
+          input_chars: number | null;
+          output_chars: number | null;
+          prompt_tokens: number | null;
+          completion_tokens: number | null;
+          total_tokens: number | null;
+          resource_type: string | null;
+          resource_id: string | null;
+          error_message: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          stage: ModelCallStage;
+          role: ModelCallRole;
+          purpose: string;
+          provider: string;
+          model: string;
+          endpoint_host?: string | null;
+          status: ModelCallStatus;
+          duration_ms?: number | null;
+          request_count?: number;
+          input_chars?: number | null;
+          output_chars?: number | null;
+          prompt_tokens?: number | null;
+          completion_tokens?: number | null;
+          total_tokens?: number | null;
+          resource_type?: string | null;
+          resource_id?: string | null;
+          error_message?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["model_call_logs"]["Insert"]>;
       };
     };
     Views: Record<string, never>;

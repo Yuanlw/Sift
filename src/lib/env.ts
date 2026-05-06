@@ -28,6 +28,16 @@ const serverEnvSchema = z.object({
     .transform((value) => value === "true"),
   SIFT_USER_ID_HEADER: z.string().min(1).default("x-sift-user-id"),
   SIFT_AGENT_API_KEY: z.string().min(1).optional(),
+  SIFT_APP_URL: z.string().url().default("http://localhost:3000"),
+  SIFT_MODEL_KEY_ENCRYPTION_SECRET: z.string().min(32).optional(),
+  SIFT_PRICE_LABEL_PERSONAL: z.string().min(1).optional(),
+  SIFT_PRICE_LABEL_PRO: z.string().min(1).optional(),
+  SIFT_PRICE_LABEL_TEAM: z.string().min(1).optional(),
+  STRIPE_SECRET_KEY: z.string().min(1).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+  STRIPE_PRICE_PERSONAL: z.string().min(1).optional(),
+  STRIPE_PRICE_PRO: z.string().min(1).optional(),
+  STRIPE_PRICE_TEAM: z.string().min(1).optional(),
 });
 
 const optionalEnvKeys = [
@@ -41,6 +51,15 @@ const optionalEnvKeys = [
   "MODEL_VISION_API_KEY",
   "MODEL_VISION_MODEL",
   "SIFT_AGENT_API_KEY",
+  "SIFT_MODEL_KEY_ENCRYPTION_SECRET",
+  "SIFT_PRICE_LABEL_PERSONAL",
+  "SIFT_PRICE_LABEL_PRO",
+  "SIFT_PRICE_LABEL_TEAM",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "STRIPE_PRICE_PERSONAL",
+  "STRIPE_PRICE_PRO",
+  "STRIPE_PRICE_TEAM",
 ] as const;
 
 export class MissingEnvError extends Error {
@@ -73,6 +92,16 @@ export function getServerEnv() {
     SIFT_TRUST_USER_HEADER: process.env.SIFT_TRUST_USER_HEADER,
     SIFT_USER_ID_HEADER: process.env.SIFT_USER_ID_HEADER,
     SIFT_AGENT_API_KEY: process.env.SIFT_AGENT_API_KEY,
+    SIFT_APP_URL: process.env.SIFT_APP_URL,
+    SIFT_MODEL_KEY_ENCRYPTION_SECRET: process.env.SIFT_MODEL_KEY_ENCRYPTION_SECRET,
+    SIFT_PRICE_LABEL_PERSONAL: process.env.SIFT_PRICE_LABEL_PERSONAL,
+    SIFT_PRICE_LABEL_PRO: process.env.SIFT_PRICE_LABEL_PRO,
+    SIFT_PRICE_LABEL_TEAM: process.env.SIFT_PRICE_LABEL_TEAM,
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_PRICE_PERSONAL: process.env.STRIPE_PRICE_PERSONAL,
+    STRIPE_PRICE_PRO: process.env.STRIPE_PRICE_PRO,
+    STRIPE_PRICE_TEAM: process.env.STRIPE_PRICE_TEAM,
   });
   const result = serverEnvSchema.safeParse(rawEnv);
 

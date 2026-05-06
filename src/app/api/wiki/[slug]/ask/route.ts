@@ -5,6 +5,7 @@ import { query } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
 import { answerWikiQuestion } from "@/lib/models";
 import { safeDecodeRouteParam } from "@/lib/route-params";
+import { SmartQuotaExceededError } from "@/lib/smart-quota";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 const askSchema = z.object({
@@ -86,6 +87,17 @@ export async function POST(request: Request, { params }: { params: { slug: strin
       }));
 
     const answer = await answerWikiQuestion({
+      modelContext: {
+        userId: userContext.userId,
+        stage: "ask",
+        role: "text",
+        purpose: "ask.wiki.answer",
+        resourceType: "wiki_page",
+        resourceId: first.wiki_id,
+        metadata: {
+          slug,
+        },
+      },
       question: body.question,
       wikiTitle: first.wiki_title,
       wikiMarkdown: first.content_markdown,
@@ -144,6 +156,10 @@ export async function POST(request: Request, { params }: { params: { slug: strin
 
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0]?.message || "Invalid input" }, { status: 400 });
+    }
+
+    if (error instanceof SmartQuotaExceededError) {
+      return NextResponse.json({ code: "SMART_QUOTA_EXCEEDED", error: error.message }, { status: 402 });
     }
 
     const message = error instanceof Error ? error.message : "Unknown error";

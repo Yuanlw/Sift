@@ -123,6 +123,14 @@ async function extractImageCapture(capture: Capture) {
     const ocr = await extractTextFromImages({
       fileUrl: capture.file_url,
       attachments: capture.raw_attachments || [],
+      modelContext: {
+        userId: capture.user_id,
+        stage: "processing",
+        role: "vision",
+        purpose: "capture.ocr",
+        resourceType: "capture",
+        resourceId: capture.id,
+      },
     });
 
     if (ocr?.text) {
@@ -176,7 +184,7 @@ async function extractUrl(url: string) {
   const platform = getSourcePlatform(url);
 
   if (platform === "x") {
-    return createUrlFallback(url, "X 平台暂不支持稳定自动提取正文。");
+    return extractXUrl(url);
   }
 
   try {
@@ -221,6 +229,262 @@ async function extractUrl(url: string) {
   } catch (error) {
     return createUrlFallback(url, error instanceof Error ? error.message : "Unknown URL extraction error");
   }
+}
+
+async function extractXUrl(url: string) {
+  const defuddle = await extractXWithDefuddle(url);
+
+  if (defuddle) {
+    return defuddle;
+  }
+
+  const jina = await extractXWithJina(url);
+
+  if (jina) {
+    return jina;
+  }
+
+  return createUrlFallback(url, "X 平台正文暂时无法自动读取。");
+}
+
+async function extractXWithDefuddle(url: string) {
+  try {
+    const response = await fetch(buildDefuddleUrl(url), {
+      headers: {
+        Accept: "text/markdown,text/plain",
+        "User-Agent": "SiftBot/0.1",
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const markdown = await response.text();
+    const parsed = parseFrontMatterMarkdown(markdown);
+    const text = normalizePastedText(parsed.body);
+
+    if (!isUsefulXText(text)) {
+      return null;
+    }
+
+    return {
+      title: parsed.frontMatter.title || getXTitle(url, parsed.frontMatter.author),
+      text,
+      contentFormat: "plain_text",
+      method: "x_defuddle",
+      status: "extracted",
+      metadata: {
+        extraction: "x_defuddle",
+        url,
+        hostname: getHostname(url),
+        source_platform: "x",
+        title: parsed.frontMatter.title || null,
+        author: parsed.frontMatter.author || null,
+        site: parsed.frontMatter.site || null,
+        published: parsed.frontMatter.published || null,
+        description: parsed.frontMatter.description || null,
+        word_count: parsed.frontMatter.word_count || null,
+      },
+      errorMessage: null,
+    } satisfies ExtractedCaptureContent;
+  } catch {
+    return null;
+  }
+}
+
+async function extractXWithJina(url: string) {
+  try {
+    const response = await fetch(buildJinaUrl(url), {
+      headers: {
+        Accept: "text/plain,text/markdown",
+        "User-Agent": "SiftBot/0.1",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const content = await response.text();
+    const parsed = parseJinaMarkdown(content);
+    const text = normalizePastedText(extractXPostTextFromJina(parsed.markdown));
+
+    if (!isUsefulXText(text)) {
+      return null;
+    }
+
+    return {
+      title: parsed.title || getXTitle(url, null),
+      text,
+      contentFormat: "plain_text",
+      method: "x_jina",
+      status: "extracted",
+      metadata: {
+        extraction: "x_jina",
+        url,
+        hostname: getHostname(url),
+        source_platform: "x",
+        title: parsed.title || null,
+        source_url: parsed.sourceUrl || null,
+      },
+      errorMessage: null,
+    } satisfies ExtractedCaptureContent;
+  } catch {
+    return null;
+  }
+}
+
+function buildDefuddleUrl(url: string) {
+  const parsed = new URL(url);
+  return `http://defuddle.md/${parsed.hostname}${parsed.pathname}${parsed.search}`;
+}
+
+function buildJinaUrl(url: string) {
+  return `https://r.jina.ai/${url}`;
+}
+
+function parseFrontMatterMarkdown(markdown: string) {
+  const match = markdown.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+
+  if (!match) {
+    return {
+      body: markdown,
+      frontMatter: {} as Record<string, string>,
+    };
+  }
+
+  return {
+    body: match[2],
+    frontMatter: parseYamlLikeFrontMatter(match[1]),
+  };
+}
+
+function parseYamlLikeFrontMatter(value: string) {
+  const fields: Record<string, string> = {};
+
+  for (const line of value.split("\n")) {
+    const match = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+
+    if (!match) {
+      continue;
+    }
+
+    fields[match[1]] = stripYamlScalarQuotes(match[2].trim());
+  }
+
+  return fields;
+}
+
+function stripYamlScalarQuotes(value: string) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
+}
+
+function parseJinaMarkdown(content: string) {
+  const markdownMarker = "\nMarkdown Content:\n";
+  const markerIndex = content.indexOf(markdownMarker);
+  const header = markerIndex >= 0 ? content.slice(0, markerIndex) : content;
+  const markdown = markerIndex >= 0 ? content.slice(markerIndex + markdownMarker.length) : content;
+
+  return {
+    markdown,
+    sourceUrl: header.match(/^URL Source:\s*(.+)$/m)?.[1]?.trim() || null,
+    title: normalizeJinaHeaderTitle(header),
+  };
+}
+
+function normalizeJinaHeaderTitle(header: string) {
+  const titleStart = header.indexOf("Title:");
+
+  if (titleStart < 0) {
+    return null;
+  }
+
+  const afterTitle = header.slice(titleStart + "Title:".length);
+  const sourceStart = afterTitle.indexOf("\nURL Source:");
+  const title = sourceStart >= 0 ? afterTitle.slice(0, sourceStart) : afterTitle;
+
+  return normalizePastedText(title).replace(/\s+/g, " ").slice(0, 160) || null;
+}
+
+function extractXPostTextFromJina(markdown: string) {
+  const lines = markdown.split("\n").map((line) => line.trim());
+  const handleIndex = lines.findIndex((line) => /^@[\w_]+$/.test(stripMarkdownLinkText(line)));
+
+  if (handleIndex < 0) {
+    return markdown;
+  }
+
+  const textLines: string[] = [];
+
+  for (const line of lines.slice(handleIndex + 1)) {
+    if (!line) {
+      if (textLines.length > 0) {
+        break;
+      }
+
+      continue;
+    }
+
+    if (isXJinaStopLine(line)) {
+      break;
+    }
+
+    textLines.push(stripMarkdownLinkText(line));
+  }
+
+  return textLines.length > 0 ? textLines.join("\n") : markdown;
+}
+
+function stripMarkdownLinkText(line: string) {
+  const match = line.match(/^\[([^\]]+)\]\([^)]+\)$/);
+  return match ? match[1] : line;
+}
+
+function isXJinaStopLine(line: string) {
+  const plain = stripMarkdownLinkText(line);
+
+  return (
+    /^(\d{1,2}:\d{2}\s*(AM|PM)|\d{1,2}\s+Views?|New to X\?|Trending now|What.s happening)$/i.test(plain) ||
+    line.includes("/analytics)") ||
+    line.includes("/status/") && /·/.test(plain)
+  );
+}
+
+function isUsefulXText(text: string) {
+  if (!text || text.length < 8) {
+    return false;
+  }
+
+  const lower = text.toLowerCase();
+  const noisyPhrases = [
+    "don’t miss what’s happening",
+    "people on x are the first to know",
+    "sign up now",
+    "create account",
+    "already have an account",
+  ];
+
+  return !noisyPhrases.some((phrase) => lower.includes(phrase));
+}
+
+function getXTitle(url: string, author: string | null | undefined) {
+  const statusId = getXStatusId(url);
+
+  if (author) {
+    return statusId ? `X ${author}：${statusId}` : `X ${author}`;
+  }
+
+  return statusId ? `X 链接：${statusId}` : "X 链接";
 }
 
 function createUrlFallback(url: string, errorMessage: string) {

@@ -1,4 +1,6 @@
-import { getServerEnv } from "@/lib/env";
+import { getEffectiveModelConfig } from "@/lib/model-settings";
+import { countTextChars, recordModelCall, type ModelCallContext, type ModelUsagePayload } from "@/lib/model-usage";
+import { assertSmartQuotaAvailable, estimateSmartQuotaCredits } from "@/lib/smart-quota";
 
 export interface KnowledgeDraft {
   title: string;
@@ -19,12 +21,12 @@ export interface WikiAnswer {
 }
 
 export async function generateKnowledgeDraft(input: {
+  modelContext?: ModelCallContext;
   title: string;
   text: string;
   note?: string | null;
   originalUrl?: string | null;
 }): Promise<KnowledgeDraft> {
-  const env = getServerEnv();
   const prompt = [
     "你是 Sift 的知识库维护助手。",
     "请把输入资料整理成可追溯的 Source 摘要和一篇 draft WikiPage。",
@@ -41,7 +43,6 @@ export async function generateKnowledgeDraft(input: {
   ].join("\n");
 
   const content = await createChatCompletion({
-    model: env.MODEL_TEXT_MODEL,
     messages: [
       {
         role: "user",
@@ -49,12 +50,13 @@ export async function generateKnowledgeDraft(input: {
       },
     ],
     responseFormat: "json_object",
-  });
+  }, input.modelContext);
 
   return JSON.parse(extractJsonObject(content)) as KnowledgeDraft;
 }
 
 export async function answerWikiQuestion(input: {
+  modelContext?: ModelCallContext;
   question: string;
   wikiTitle: string;
   wikiMarkdown: string;
@@ -103,7 +105,6 @@ export async function answerWikiQuestion(input: {
   ].join("\n");
 
   const content = await createChatCompletion({
-    model: getServerEnv().MODEL_TEXT_MODEL,
     messages: [
       {
         role: "user",
@@ -111,7 +112,7 @@ export async function answerWikiQuestion(input: {
       },
     ],
     responseFormat: "json_object",
-  });
+  }, input.modelContext);
 
   const parsed = JSON.parse(extractJsonObject(content)) as Partial<WikiAnswer>;
   const citedLabels = new Set(
@@ -133,6 +134,7 @@ export async function answerWikiQuestion(input: {
 }
 
 export async function answerKnowledgeBaseQuestion(input: {
+  modelContext?: ModelCallContext;
   question: string;
   contexts: Array<{
     label: string;
@@ -181,7 +183,6 @@ export async function answerKnowledgeBaseQuestion(input: {
   ].join("\n");
 
   const content = await createChatCompletion({
-    model: getServerEnv().MODEL_TEXT_MODEL,
     messages: [
       {
         role: "user",
@@ -189,7 +190,7 @@ export async function answerKnowledgeBaseQuestion(input: {
       },
     ],
     responseFormat: "json_object",
-  });
+  }, input.modelContext);
 
   const parsed = JSON.parse(extractJsonObject(content)) as Partial<WikiAnswer>;
   const citedLabels = new Set(
@@ -211,72 +212,183 @@ export async function answerKnowledgeBaseQuestion(input: {
   };
 }
 
-export async function embedTexts(texts: string[]) {
+export async function embedTexts(texts: string[], modelContext?: ModelCallContext) {
   if (texts.length === 0) {
     return [];
   }
 
-  const env = getServerEnv();
-  const response = await fetch(`${trimTrailingSlash(env.MODEL_EMBEDDING_BASE_URL)}/embeddings`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.MODEL_EMBEDDING_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env.MODEL_EMBEDDING_MODEL,
-      input: texts,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Embedding request failed: ${response.status} ${await response.text()}`);
+  const config = await getEffectiveModelConfig(modelContext?.userId);
+  const inputChars = countTextChars(texts);
+  if (modelContext?.userId) {
+    await assertSmartQuotaAvailable(
+      modelContext.userId,
+      config.mode,
+      estimateSmartQuotaCredits({
+        context: modelContext,
+        inputChars,
+        requestCount: texts.length,
+      }),
+    );
   }
+  const startedAt = Date.now();
+  const body = {
+    model: config.embedding.model,
+    input: texts,
+  };
 
-  const data = (await response.json()) as { data: Array<{ embedding: number[] }> };
-  return data.data.map((item) => item.embedding);
+  try {
+    const response = await fetch(`${trimTrailingSlash(config.embedding.baseUrl)}/embeddings`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.embedding.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Embedding request failed: ${response.status} ${await response.text()}`);
+    }
+
+    const data = (await response.json()) as {
+      data: Array<{ embedding: number[] }>;
+      usage?: ModelUsagePayload;
+    };
+    await recordModelCall({
+      baseUrl: config.embedding.baseUrl,
+      context: modelContext,
+      durationMs: Date.now() - startedAt,
+      inputChars,
+      model: config.embedding.model,
+      modelMode: config.mode,
+      outputChars: null,
+      provider: config.provider,
+      requestCount: texts.length,
+      status: "success",
+      usage: data.usage || null,
+    });
+
+    return data.data.map((item) => item.embedding);
+  } catch (error) {
+    const message = getModelErrorMessage(error);
+    await recordModelCall({
+      baseUrl: config.embedding.baseUrl,
+      context: modelContext,
+      durationMs: Date.now() - startedAt,
+      errorMessage: message,
+      inputChars,
+      model: config.embedding.model,
+      modelMode: config.mode,
+      outputChars: null,
+      provider: config.provider,
+      requestCount: texts.length,
+      status: "failed",
+    });
+    throw new Error(message);
+  }
 }
 
 async function createChatCompletion(input: {
-  model: string;
+  model?: string;
   messages: Array<{ role: "user" | "system" | "assistant"; content: string }>;
   responseFormat?: "json_object";
-}) {
-  const env = getServerEnv();
-  const body = buildChatCompletionBody(input, env);
-  const response = await fetch(`${trimTrailingSlash(env.MODEL_TEXT_BASE_URL)}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.MODEL_TEXT_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+}, modelContext?: ModelCallContext) {
+  const config = await getEffectiveModelConfig(modelContext?.userId);
+  const inputChars = countTextChars(input.messages);
+  if (modelContext?.userId) {
+    await assertSmartQuotaAvailable(
+      modelContext.userId,
+      config.mode,
+      estimateSmartQuotaCredits({
+        context: modelContext,
+        inputChars,
+        requestCount: 1,
+      }),
+    );
+  }
+  const startedAt = Date.now();
+  const model = input.model || config.text.model;
+  const body = buildChatCompletionBody({ ...input, model }, config);
 
-  if (!response.ok) {
-    const errorText = await response.text();
+  try {
+    const response = await fetch(`${trimTrailingSlash(config.text.baseUrl)}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.text.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-    if (input.responseFormat && response.status >= 400 && response.status < 500) {
-      const retryBody = { ...body };
-      delete retryBody.response_format;
-      const retryResponse = await fetch(`${trimTrailingSlash(env.MODEL_TEXT_BASE_URL)}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.MODEL_TEXT_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(retryBody),
-      });
+    if (!response.ok) {
+      const errorText = await response.text();
 
-      if (retryResponse.ok) {
-        return readChatCompletionContent(retryResponse);
+      if (input.responseFormat && response.status >= 400 && response.status < 500) {
+        const retryBody = { ...body };
+        delete retryBody.response_format;
+        const retryResponse = await fetch(`${trimTrailingSlash(config.text.baseUrl)}/chat/completions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${config.text.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(retryBody),
+        });
+
+        if (retryResponse.ok) {
+          const retryResult = await readChatCompletionContent(retryResponse);
+          await recordModelCall({
+            baseUrl: config.text.baseUrl,
+            context: modelContext,
+            durationMs: Date.now() - startedAt,
+            inputChars,
+            model,
+            modelMode: config.mode,
+            outputChars: retryResult.content.length,
+            provider: config.provider,
+            requestCount: 2,
+            status: "success",
+            usage: retryResult.usage,
+          });
+          return retryResult.content;
+        }
       }
+
+      throw new Error(`Chat completion request failed: ${response.status} ${errorText}`);
     }
 
-    throw new Error(`Chat completion request failed: ${response.status} ${errorText}`);
-  }
+    const result = await readChatCompletionContent(response);
+    await recordModelCall({
+      baseUrl: config.text.baseUrl,
+      context: modelContext,
+      durationMs: Date.now() - startedAt,
+      inputChars,
+      model,
+      modelMode: config.mode,
+      outputChars: result.content.length,
+      provider: config.provider,
+      requestCount: 1,
+      status: "success",
+      usage: result.usage,
+    });
 
-  return readChatCompletionContent(response);
+    return result.content;
+  } catch (error) {
+    await recordModelCall({
+      baseUrl: config.text.baseUrl,
+      context: modelContext,
+      durationMs: Date.now() - startedAt,
+      errorMessage: error instanceof Error ? error.message : "Unknown chat completion error",
+      inputChars,
+      model,
+      modelMode: config.mode,
+      outputChars: null,
+      provider: config.provider,
+      requestCount: 1,
+      status: "failed",
+    });
+    throw error;
+  }
 }
 
 function buildChatCompletionBody(
@@ -285,7 +397,7 @@ function buildChatCompletionBody(
     messages: Array<{ role: "user" | "system" | "assistant"; content: string }>;
     responseFormat?: "json_object";
   },
-  env: ReturnType<typeof getServerEnv>,
+  config: Awaited<ReturnType<typeof getEffectiveModelConfig>>,
 ) {
   return {
     model: input.model,
@@ -293,14 +405,15 @@ function buildChatCompletionBody(
     temperature: 0.2,
     stream: false,
     response_format: input.responseFormat ? { type: input.responseFormat } : undefined,
-    thinking: env.MODEL_TEXT_THINKING ? { type: env.MODEL_TEXT_THINKING } : undefined,
-    reasoning_effort: env.MODEL_TEXT_REASONING_EFFORT,
+    thinking: config.text.thinking ? { type: config.text.thinking } : undefined,
+    reasoning_effort: config.text.reasoningEffort,
   };
 }
 
 async function readChatCompletionContent(response: Response) {
   const data = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
+    usage?: ModelUsagePayload;
   };
   const content = data.choices?.[0]?.message?.content;
 
@@ -308,11 +421,40 @@ async function readChatCompletionContent(response: Response) {
     throw new Error("Model response did not include message content.");
   }
 
-  return content;
+  return {
+    content,
+    usage: data.usage || null,
+  };
 }
 
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
+}
+
+function getModelErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Unknown model request error";
+  }
+
+  const cause = error.cause;
+
+  if (cause instanceof Error && cause.message) {
+    return `${error.message}: ${cause.message}`;
+  }
+
+  if (cause && typeof cause === "object") {
+    const code = "code" in cause && typeof cause.code === "string" ? cause.code : null;
+    const syscall = "syscall" in cause && typeof cause.syscall === "string" ? cause.syscall : null;
+    const address = "address" in cause && typeof cause.address === "string" ? cause.address : null;
+    const port = "port" in cause && (typeof cause.port === "string" || typeof cause.port === "number") ? String(cause.port) : null;
+    const parts = [code, syscall, address, port].filter(Boolean);
+
+    if (parts.length > 0) {
+      return `${error.message}: ${parts.join(" ")}`;
+    }
+  }
+
+  return error.message;
 }
 
 function extractJsonObject(input: string) {

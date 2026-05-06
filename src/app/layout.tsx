@@ -22,18 +22,37 @@ export default function RootLayout({
         <div className="shell">
           <header className="topbar">
             <Link className="brand" href="/">
-              Sift
+              <span className="brand-mark">S</span>
+              <span>Sift</span>
             </Link>
             <div className="topbar-actions">
               <nav className="nav" aria-label={localeText(locale, "主导航", "Primary navigation")}>
+                <Link href="/">{localeText(locale, "首页", "Home")}</Link>
                 <Link href="/inbox">{localeText(locale, "收集箱", "Inbox")}</Link>
                 <Link href="/sources">{localeText(locale, "来源资料", "Sources")}</Link>
                 <Link href="/wiki">{localeText(locale, "知识页", "Wiki")}</Link>
               </nav>
               <LanguageToggle locale={locale} />
+              <Link className="account-pill" href="/settings">
+                <span className="account-dot" />
+                {localeText(locale, "本地账号", "Local Account")}
+              </Link>
             </div>
           </header>
           <main className="main">{children}</main>
+          <footer className="site-footer">
+            <div>
+              <strong>Sift</strong>
+              <span>{localeText(locale, "Capture-first personal knowledge base.", "Capture-first personal knowledge base.")}</span>
+            </div>
+            <nav aria-label={localeText(locale, "页脚导航", "Footer navigation")}>
+              <Link href="/pricing">{localeText(locale, "价格", "Pricing")}</Link>
+              <Link href="/contact">{localeText(locale, "联系我们", "Contact Us")}</Link>
+              <Link href="/privacy">{localeText(locale, "隐私政策", "Privacy Policy")}</Link>
+              <Link href="/terms">{localeText(locale, "服务条款", "Terms of Service")}</Link>
+              <Link href="/refund">{localeText(locale, "退款政策", "Refund Policy")}</Link>
+            </nav>
+          </footer>
         </div>
       </body>
     </html>

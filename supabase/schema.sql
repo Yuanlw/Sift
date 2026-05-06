@@ -159,6 +159,80 @@ create table knowledge_recommendations (
   unique (user_id, dedupe_key)
 );
 
+create table model_call_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  stage text not null check (stage in ('processing', 'ask', 'retrieval', 'management', 'agent')),
+  role text not null check (role in ('text', 'embedding', 'vision')),
+  purpose text not null,
+  provider text not null,
+  model text not null,
+  endpoint_host text,
+  status text not null check (status in ('success', 'failed')),
+  duration_ms integer,
+  request_count integer not null default 1,
+  input_chars integer,
+  output_chars integer,
+  prompt_tokens integer,
+  completion_tokens integer,
+  total_tokens integer,
+  resource_type text,
+  resource_id text,
+  error_message text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table user_model_settings (
+  user_id uuid primary key,
+  mode text not null default 'default' check (mode in ('default', 'custom')),
+  text_base_url text,
+  text_api_key text,
+  text_model text,
+  text_thinking text check (text_thinking in ('enabled', 'disabled') or text_thinking is null),
+  text_reasoning_effort text check (text_reasoning_effort in ('low', 'medium', 'high') or text_reasoning_effort is null),
+  embedding_base_url text,
+  embedding_api_key text,
+  embedding_model text,
+  embedding_dimensions integer,
+  vision_base_url text,
+  vision_api_key text,
+  vision_model text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table smart_quota_accounts (
+  user_id uuid primary key,
+  plan_code text not null default 'local',
+  enforcement_mode text not null default 'unlimited' check (enforcement_mode in ('unlimited', 'soft_limit', 'hard_limit')),
+  monthly_credit_limit integer,
+  period_anchor_day integer not null default 1 check (period_anchor_day >= 1 and period_anchor_day <= 28),
+  quota_source text not null default 'local' check (quota_source in ('local', 'stripe', 'manual')),
+  stripe_customer_id text,
+  stripe_subscription_id text,
+  stripe_subscription_status text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table smart_quota_ledger (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  period_start timestamptz not null,
+  period_end timestamptz not null,
+  category text not null check (category in ('capture_processing', 'image_ocr', 'semantic_indexing', 'ask', 'retrieval')),
+  credits integer not null check (credits > 0),
+  stage text not null,
+  role text not null,
+  purpose text not null,
+  model_call_log_id uuid references model_call_logs(id) on delete set null,
+  resource_type text,
+  resource_id text,
+  calculation jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create index captures_user_created_idx on captures (user_id, created_at desc);
 create index processing_jobs_capture_idx on processing_jobs (capture_id);
 create index extracted_contents_capture_idx on extracted_contents (capture_id, created_at desc);
@@ -177,3 +251,9 @@ create index knowledge_discoveries_user_created_idx on knowledge_discoveries (us
 create index knowledge_discoveries_source_idx on knowledge_discoveries (source_id, created_at desc);
 create index knowledge_recommendations_user_rank_idx on knowledge_recommendations (user_id, status, updated_at desc, score desc);
 create index knowledge_recommendations_source_idx on knowledge_recommendations (source_id, updated_at desc);
+create index model_call_logs_user_created_idx on model_call_logs (user_id, created_at desc);
+create index model_call_logs_user_purpose_idx on model_call_logs (user_id, stage, role, purpose, created_at desc);
+create index smart_quota_ledger_user_period_idx on smart_quota_ledger (user_id, period_start, period_end, created_at desc);
+create index smart_quota_ledger_user_category_idx on smart_quota_ledger (user_id, category, created_at desc);
+create index smart_quota_accounts_stripe_customer_idx on smart_quota_accounts (stripe_customer_id);
+create index smart_quota_accounts_stripe_subscription_idx on smart_quota_accounts (stripe_subscription_id);

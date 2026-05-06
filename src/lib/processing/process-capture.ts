@@ -4,6 +4,7 @@ import { type ExtractedCaptureContent, extractCaptureText } from "@/lib/extracti
 import { createKnowledgeDiscoveriesForProcessedCapture } from "@/lib/knowledge-discoveries";
 import { refreshKnowledgeRecommendationsForProcessedCapture } from "@/lib/knowledge-recommendations";
 import { embedTexts, generateKnowledgeDraft, type KnowledgeDraft } from "@/lib/models";
+import { SmartQuotaExceededError } from "@/lib/smart-quota";
 import { toSlug } from "@/lib/slug";
 import { toSqlVector } from "@/lib/vector";
 import type { Capture, ExtractedContent, ProcessingJob, Source, WikiPage } from "@/types/database";
@@ -41,18 +42,37 @@ export async function processCaptureById(captureId: string) {
     });
 
     currentStep = "structuring";
-    const draft = await runJobStep(job.id, currentStep, async () =>
-      withTimeout(
-        generateKnowledgeDraft({
-          title: extracted.title,
-          text: extracted.text,
-          note: capture.note,
-          originalUrl: capture.raw_url,
-        }),
-        25000,
-        () => createFallbackDraft(extracted),
-      ).catch(() => createFallbackDraft(extracted)),
-    );
+    await markJobStep(job.id, currentStep, "running");
+    const draft = await withTimeout(
+      generateKnowledgeDraft({
+        modelContext: {
+          userId: capture.user_id,
+          stage: "processing",
+          role: "text",
+          purpose: "capture.structure",
+          resourceType: "capture",
+          resourceId: capture.id,
+        },
+        title: extracted.title,
+        text: extracted.text,
+        note: capture.note,
+        originalUrl: capture.raw_url,
+      }),
+      25000,
+      () => createFallbackDraft(extracted),
+    )
+      .then(async (result) => {
+        await markJobStep(job.id, currentStep, "completed");
+        return result;
+      })
+      .catch(async (error) => {
+        if (error instanceof SmartQuotaExceededError) {
+          await markJobStep(job.id, currentStep, "skipped", error.message);
+        } else {
+          await markJobStep(job.id, currentStep, "skipped", "AI 结构化整理暂时不可用，已使用基础整理结果。");
+        }
+        return createFallbackDraft(extracted);
+      });
 
     currentStep = "create_source";
     const source = await runJobStep(job.id, currentStep, () =>
@@ -85,11 +105,25 @@ export async function processCaptureById(captureId: string) {
     currentStep = "create_embeddings";
     try {
       embeddings = await runJobStep(job.id, currentStep, () =>
-        withTimeout(embedTexts(chunkInputs.map((chunk) => chunk.content)), 25000, () => []),
+        withTimeout(
+          embedTexts(chunkInputs.map((chunk) => chunk.content), {
+            userId: capture.user_id,
+            stage: "processing",
+            role: "embedding",
+            purpose: "capture.create_embeddings",
+            resourceType: "capture",
+            resourceId: capture.id,
+            metadata: {
+              chunk_count: chunkInputs.length,
+            },
+          }),
+          25000,
+          () => [],
+        ),
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown embedding error";
-      await markJobStep(job.id, currentStep, "failed", message);
+      await markJobStep(job.id, currentStep, "skipped", message);
       embeddings = [];
     }
 
@@ -107,7 +141,7 @@ export async function processCaptureById(captureId: string) {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown discovery error";
-      await markJobStep(job.id, currentStep, "failed", message);
+      await markJobStep(job.id, currentStep, "skipped", message);
     }
 
     currentStep = "refresh_recommendations";
@@ -120,7 +154,7 @@ export async function processCaptureById(captureId: string) {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown recommendation error";
-      await markJobStep(job.id, currentStep, "failed", message);
+      await markJobStep(job.id, currentStep, "skipped", message);
     }
 
     if (await isCaptureIgnored(capture.id)) {
@@ -343,7 +377,7 @@ async function runJobStep<T>(jobId: string, step: string, action: () => Promise<
   return result;
 }
 
-async function markJobStep(jobId: string, step: string, status: "running" | "completed" | "failed", error?: string) {
+async function markJobStep(jobId: string, step: string, status: "running" | "completed" | "failed" | "skipped", error?: string) {
   const timestampField = status === "running" ? "started_at" : "finished_at";
 
   await query(

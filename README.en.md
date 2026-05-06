@@ -64,6 +64,7 @@ Sift is now a usable personal MVP:
 - P5/P5.5: mobile-first capture composer, daily inbox triage, retry/supplement/ignore, notes.
 - P6: external collection import, including URLs, bookmarks, and photo batches.
 - P7: recent review, knowledge discoveries, recommendations, long-list management, archive/restore/delete, management search.
+- P8: model-call metering, model strategy documentation, an account/model/usage settings center, and smart-quota ledger.
 
 The project is ready for personal daily testing and focused product review.
 
@@ -101,13 +102,28 @@ For Docker Compose deployment and migration notes, see [Deployment](docs/deploym
 
 ## Model Setup
 
-Sift uses an OpenAI-compatible model interface in the current implementation. Text generation, embeddings, and vision/OCR can be configured separately.
+Sift model setup now belongs in `/settings`, not in `.env` for regular users.
+
+There are two modes:
+
+- Use Sift default models: show capabilities, quota, usage, and health only. Provider, model names, endpoints, and keys are not shown.
+- Use custom models: configure OpenAI-compatible text, embedding, and vision/OCR models, with validation buttons in the UI.
 
 At a high level, you need:
 
 - A chat/text model for extraction, structuring, wiki generation, and answers.
 - An embedding model for retrieval.
 - Optionally, a vision model for image OCR.
+
+Model-related `.env` values should be treated as deployment defaults or future hosted-SaaS defaults. For normal users, model choice and keys should be managed in the settings center.
+
+Custom model API keys are never returned to the client. SaaS or multi-user deployments should set `SIFT_MODEL_KEY_ENCRYPTION_SECRET`; newly saved custom model keys are encrypted server-side before being stored. Local single-user deployments may leave it empty to keep setup simple.
+
+Default models use one unified smart quota. Users see monthly quota, used credits, remaining credits, and where usage went; internally Sift accounts by material processing, image OCR, semantic indexing, Ask, and retrieval. Custom model mode does not consume Sift smart quota.
+
+SaaS billing uses Stripe Checkout. Hosted deployments need Stripe subscription Prices plus `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PERSONAL`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_TEAM`, and `SIFT_APP_URL`. Local single-tenant deployments can leave them empty.
+
+Before submitting the site for Stripe review, prepare the public website properly: HTTPS domain, real contact email, truthful and consistent business information, Pricing, Contact Us, Privacy Policy, Terms of Service, and Refund Policy. Sift includes these public pages; hosted deployments should replace placeholders with `SIFT_CONTACT_EMAIL`, `SIFT_BUSINESS_NAME`, `SIFT_BUSINESS_ADDRESS`, and `SIFT_PRICE_LABEL_*`.
 
 The project is designed so the model layer can evolve without changing the product boundary. Future provider work should support OpenAI, Anthropic, Google Gemini, Qwen, DeepSeek, Doubao, Zhipu, Kimi, local model gateways, and custom OpenAI-compatible services.
 
@@ -117,10 +133,12 @@ The project is designed so the model layer can evolve without changing the produ
 - `/inbox` - fast capture, imports, daily triage, failed/active/ignored views.
 - `/sources` - cleaned source material with search, filters, archive, restore, and delete.
 - `/wiki` - generated knowledge pages with search, filters, archive, restore, delete, and page-level Ask.
+- `/settings` - settings center for account/deployment info, model configuration, model usage, and billing boundaries.
 
 ## Documentation
 
 - [Project Review](docs/project-review.md)
+- [Model Strategy and Billing](docs/model-strategy-and-billing.md)
 - [Capture-first Roadmap](docs/capture-first-roadmap.md)
 - [Mobile-first Capture Roadmap](docs/mobile-capture-roadmap.md)
 - [Local Setup](docs/local-setup.md)
