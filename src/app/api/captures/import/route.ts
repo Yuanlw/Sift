@@ -5,6 +5,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { CaptureValidationError, createCapture, normalizeHttpUrl } from "@/lib/captures/create-capture";
 import { query } from "@/lib/db";
 import { getServerEnv, MissingEnvError } from "@/lib/env";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { MAX_CAPTURE_IMPORT_FILES, saveCaptureUploads, UploadValidationError } from "@/lib/upload-storage";
 import { getUserContextFromRequest } from "@/lib/user-context";
 import type { Json, RawAttachment } from "@/types/database";
@@ -42,8 +43,14 @@ const importSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     const env = getServerEnv();
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const parsedRequest = await parseImportRequest(request);
     const body = importSchema.parse(parsedRequest.payload);
 

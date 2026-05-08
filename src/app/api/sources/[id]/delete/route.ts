@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
 import { MissingEnvError } from "@/lib/env";
 import { deleteArchivedSources } from "@/lib/permanent-delete";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { transaction } from "@/lib/db";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
@@ -12,11 +13,17 @@ interface SourceDeleteRow {
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     if (!isUuid(params.id)) {
       return NextResponse.json({ error: "Invalid source id." }, { status: 400 });
     }
 
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const deleted = await transaction(async (client) => {
       const source = await client.query<SourceDeleteRow>(
         `

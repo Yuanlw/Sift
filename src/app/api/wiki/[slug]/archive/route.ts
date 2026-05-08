@@ -2,18 +2,25 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
 import { query } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { safeDecodeRouteParam } from "@/lib/route-params";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 export async function POST(request: Request, { params }: { params: { slug: string } }) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     const slug = safeDecodeRouteParam(params.slug);
 
     if (!slug) {
       return NextResponse.json({ error: "Invalid wiki slug." }, { status: 400 });
     }
 
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const action = await parseAction(request);
 
     if (!action) {

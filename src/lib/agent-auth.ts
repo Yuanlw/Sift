@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server";
+import { loadActiveSessionUser } from "@/lib/auth";
 import { getServerEnv } from "@/lib/env";
 
-export function authorizeAgentRequest(request: Request) {
+export async function authorizeAgentRequest(request: Request) {
   const env = getServerEnv();
+  const authorization = request.headers.get("authorization") || "";
+  const hasAgentToken = Boolean(env.SIFT_AGENT_API_KEY && authorization === `Bearer ${env.SIFT_AGENT_API_KEY}`);
 
-  if (!env.SIFT_AGENT_API_KEY) {
+  if (hasAgentToken) {
     return null;
   }
 
-  const authorization = request.headers.get("authorization") || "";
-  const expected = `Bearer ${env.SIFT_AGENT_API_KEY}`;
+  const session = await loadActiveSessionUser(request.headers.get("cookie"));
 
-  if (authorization === expected) {
+  if (session) {
+    return null;
+  }
+
+  if (!env.SIFT_REQUIRE_AUTH && !env.SIFT_AGENT_API_KEY) {
     return null;
   }
 

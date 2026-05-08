@@ -9,7 +9,7 @@ interface AttachmentRow {
 }
 
 export async function GET(request: Request, { params }: { params: { filename: string } }) {
-  const userContext = getUserContextFromRequest(request);
+  const userContext = await getUserContextFromRequest(request);
   const url = `/api/uploads/captures/${params.filename}`;
   const filename = getFilenameFromCaptureUploadUrl(url);
 

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LanguageToggle } from "@/components/language-toggle";
+import { MainNav } from "@/components/main-nav";
 import { getLocale, localeText } from "@/lib/i18n";
+import { getOptionalUserContextFromHeaders } from "@/lib/user-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,12 +11,16 @@ export const metadata: Metadata = {
   description: "Turn scattered captures into reusable knowledge.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   const locale = getLocale();
+  const userContext = await getOptionalUserContextFromHeaders();
+  const accountLabel = userContext?.email
+    ? userContext.email
+    : localeText(locale, "登录", "Log in");
 
   return (
     <html lang={locale === "en" ? "en" : "zh-CN"}>
@@ -26,16 +32,11 @@ export default function RootLayout({
               <span>Sift</span>
             </Link>
             <div className="topbar-actions">
-              <nav className="nav" aria-label={localeText(locale, "主导航", "Primary navigation")}>
-                <Link href="/">{localeText(locale, "首页", "Home")}</Link>
-                <Link href="/inbox">{localeText(locale, "收集箱", "Inbox")}</Link>
-                <Link href="/sources">{localeText(locale, "来源资料", "Sources")}</Link>
-                <Link href="/wiki">{localeText(locale, "知识页", "Wiki")}</Link>
-              </nav>
+              <MainNav locale={locale} />
               <LanguageToggle locale={locale} />
-              <Link className="account-pill" href="/settings">
+              <Link className="account-pill" href={userContext?.email ? "/settings" : "/login"}>
                 <span className="account-dot" />
-                {localeText(locale, "本地账号", "Local Account")}
+                {accountLabel}
               </Link>
             </div>
           </header>

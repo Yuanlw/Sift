@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { modelSettingsInputSchema, saveUserModelSettings } from "@/lib/model-settings";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 export async function POST(request: Request) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     const body = modelSettingsInputSchema.parse(await request.json());
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const settings = await saveUserModelSettings(userContext.userId, body);
     return NextResponse.json({ settings });
   } catch (error) {

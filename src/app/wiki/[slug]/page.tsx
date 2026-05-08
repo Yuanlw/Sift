@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { KnowledgeGraphPanel } from "@/components/knowledge-graph-panel";
 import { WikiArchiveActions } from "@/components/wiki-archive-actions";
 import { WikiAskForm } from "@/components/wiki-ask-form";
 import { query } from "@/lib/db";
 import { formatDateTime, getLocale, localeText } from "@/lib/i18n";
+import { loadKnowledgeGraphNeighborhood } from "@/lib/knowledge-graph";
 import { loadSimilarWikiPageSuggestions } from "@/lib/reuse-suggestions";
 import { safeDecodeRouteParam } from "@/lib/route-params";
 import { getUserContextFromHeaders } from "@/lib/user-context";
@@ -74,7 +76,7 @@ async function loadAskHistories(wikiPageId: string, userId: string) {
 
 export default async function WikiDetailPage({ params }: { params: { slug: string } }) {
   const locale = getLocale();
-  const userContext = getUserContextFromHeaders();
+  const userContext = await getUserContextFromHeaders();
   const slug = safeDecodeRouteParam(params.slug);
 
   if (!slug) {
@@ -90,6 +92,11 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
   const similarPages = await loadSimilarWikiPageSuggestions({
     userId: userContext.userId,
     wikiPageId: page.id,
+  });
+  const graphNeighbors = await loadKnowledgeGraphNeighborhood({
+    nodeId: page.id,
+    nodeType: "wiki_page",
+    userId: userContext.userId,
   });
   const askHistories = await loadAskHistories(page.id, userContext.userId);
 
@@ -129,6 +136,7 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
             <h3>{localeText(locale, "来源", "Source")}</h3>
             <p>{page.source_title || localeText(locale, "还没有关联来源。", "No linked source yet.")}</p>
           </div>
+          <KnowledgeGraphPanel locale={locale} neighbors={graphNeighbors} />
           <div className="panel">
             <h3>{localeText(locale, "合并建议", "Merge suggestions")}</h3>
             {similarPages.length > 0 ? (

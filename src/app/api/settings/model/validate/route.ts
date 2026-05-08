@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { loadStoredModelApiKey } from "@/lib/model-settings";
 import { validateModelConfig } from "@/lib/model-validation";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 const validateSchema = z.object({
@@ -14,8 +15,14 @@ const validateSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     const body = validateSchema.parse(await request.json());
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const apiKey = body.apiKey?.trim() || (await loadStoredModelApiKey(userContext.userId, body.target));
 
     if (!apiKey) {

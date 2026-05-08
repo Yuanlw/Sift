@@ -10,7 +10,7 @@ import {
   queryAgentContext,
   readAgentResource,
 } from "@/lib/sift-query";
-import { getUserContextFromRequest, type UserContext } from "@/lib/user-context";
+import { getAgentUserContextFromRequest, type UserContext } from "@/lib/user-context";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
       return originError;
     }
 
-    const unauthorized = authorizeAgentRequest(request);
+    const unauthorized = await authorizeAgentRequest(request);
 
     if (unauthorized) {
       return unauthorized;
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getAgentUserContextFromRequest(request);
     const response = await handleJsonRpc(payload as JsonRpcRequest, userContext, request);
 
     if (!response) {

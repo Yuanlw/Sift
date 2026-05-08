@@ -11,6 +11,10 @@ interface RetrievedChunkRow {
   content: string;
   created_at: string;
   distance: number | null;
+  graph_depth: number | null;
+  graph_edge_type: string | null;
+  graph_path: string[] | null;
+  graph_weight: number | null;
   keyword_rank: number | null;
   source_id: string | null;
   source_title: string | null;
@@ -30,6 +34,10 @@ export interface RetrievedContext {
   originalUrl: string | null;
   vectorScore: number;
   keywordScore: number;
+  graphScore: number;
+  graphDepth: number;
+  graphEdgeType: string | null;
+  graphPath: string[];
   vectorRankScore: number;
   keywordRankScore: number;
   titleScore: number;
@@ -45,6 +53,12 @@ export interface LabeledContext {
   sourceId: string | null;
   wikiSlug: string | null;
   originalUrl: string | null;
+  matchReasons?: string[];
+  graph?: {
+    depth: number;
+    relationType: string | null;
+    path: string[];
+  };
 }
 
 export interface AgentContext {
@@ -60,9 +74,15 @@ export interface AgentContext {
   score: number;
   matchReasons: string[];
   scores: {
+    graph: number;
     vector: number;
     keyword: number;
     title: number;
+  };
+  graph?: {
+    depth: number;
+    relationType: string | null;
+    path: string[];
   };
 }
 
@@ -117,12 +137,20 @@ interface AgentResourceRow {
   updated_at: string;
 }
 
+interface RetrievalIntent {
+  graphBoost: number;
+  graphDepth: 1 | 2;
+  label: "balanced" | "relation" | "evidence" | "comparison";
+  minGraphScore: number;
+}
+
 export async function retrieveHybridContexts(
   userId: string,
   searchQuery: string,
   limit = 8,
   modelContext?: Omit<ModelCallContext, "role" | "userId">,
 ) {
+  const intent = inferRetrievalIntent(searchQuery);
   const [vectorRows, keywordRows] = await Promise.all([
     retrieveVectorChunks(userId, searchQuery, modelContext).catch(() => []),
     retrieveKeywordChunks(userId, searchQuery),
@@ -152,13 +180,46 @@ export async function retrieveHybridContexts(
     }
   }
 
-  const sorted = rerankContexts(Array.from(merged.values()), terms);
+  let graphRows: RetrievedChunkRow[] = [];
+
+  try {
+    graphRows = await retrieveGraphExpandedChunks(
+      userId,
+      Array.from(merged.values()),
+      Math.max(limit * 3, 10),
+      intent,
+      searchQuery,
+      terms,
+    );
+  } catch (error) {
+    console.error("Knowledge graph expansion failed.", error);
+    throw error;
+  }
+
+  for (const row of graphRows) {
+    if (merged.has(row.id)) {
+      continue;
+    }
+
+    const context = toRetrievedContext(row);
+    context.graphScore = row.graph_weight === null ? 0 : Number(row.graph_weight);
+    context.graphDepth = row.graph_depth === null ? 0 : Number(row.graph_depth);
+    context.graphEdgeType = row.graph_edge_type;
+    context.graphPath = row.graph_path || [];
+    merged.set(context.id, context);
+  }
+
+  const sorted = rerankContexts(Array.from(merged.values()), terms, intent);
   const hasKeywordHits = sorted.some((context) => context.keywordScore > 0);
 
   return sorted
     .filter((context, index) => {
       if (context.keywordScore > 0) {
         return true;
+      }
+
+      if (context.graphScore > 0) {
+        return context.graphScore >= intent.minGraphScore;
       }
 
       if (!hasKeywordHits) {
@@ -179,6 +240,15 @@ export function toLabeledContexts(contexts: RetrievedContext[]): LabeledContext[
     sourceId: context.sourceId,
     wikiSlug: context.wikiSlug,
     originalUrl: context.originalUrl,
+    matchReasons: context.matchReasons,
+    graph:
+      context.graphScore > 0
+        ? {
+            depth: context.graphDepth,
+            relationType: context.graphEdgeType,
+            path: context.graphPath,
+          }
+        : undefined,
   }));
 }
 
@@ -196,10 +266,19 @@ export function toAgentContexts(contexts: RetrievedContext[]): AgentContext[] {
     score: scoreContext(context),
     matchReasons: context.matchReasons,
     scores: {
+      graph: context.graphScore,
       vector: context.vectorScore,
       keyword: context.keywordScore,
       title: context.titleScore,
     },
+    graph:
+      context.graphScore > 0
+        ? {
+            depth: context.graphDepth,
+            relationType: context.graphEdgeType,
+            path: context.graphPath,
+          }
+        : undefined,
   }));
 }
 
@@ -465,6 +544,10 @@ async function retrieveVectorChunks(
         c.content,
         c.created_at,
         c.embedding <=> $2::vector as distance,
+        null::int as graph_depth,
+        null::text as graph_edge_type,
+        null::text[] as graph_path,
+        null::real as graph_weight,
         null::real as keyword_rank,
         case when c.parent_type = 'source' then s.id else ws.id end as source_id,
         case when c.parent_type = 'source' then s.title else ws.title end as source_title,
@@ -504,6 +587,10 @@ async function retrieveKeywordChunks(userId: string, searchQuery: string) {
         c.content,
         c.created_at,
         null::real as distance,
+        null::int as graph_depth,
+        null::text as graph_edge_type,
+        null::text[] as graph_path,
+        null::real as graph_weight,
         ts_rank_cd(to_tsvector('simple', c.content), websearch_to_tsquery('simple', $2)) as keyword_rank,
         case when c.parent_type = 'source' then s.id else ws.id end as source_id,
         case when c.parent_type = 'source' then s.title else ws.title end as source_title,
@@ -531,6 +618,191 @@ async function retrieveKeywordChunks(userId: string, searchQuery: string) {
   return result.rows;
 }
 
+async function retrieveGraphExpandedChunks(
+  userId: string,
+  seeds: RetrievedContext[],
+  limit: number,
+  intent: RetrievalIntent,
+  searchQuery: string,
+  terms: string[],
+) {
+  const seedNodes = uniqueSeedNodes(seeds).slice(0, 8);
+  const termPatterns = terms.map((term) => `%${term}%`);
+
+  if (seedNodes.length === 0) {
+    return [];
+  }
+
+  const result = await query<RetrievedChunkRow>(
+    `
+      with seed_nodes as (
+        select *
+        from unnest($2::text[], $3::uuid[]) as seeds(parent_type, parent_id)
+      ),
+      edge_weights(edge_type, multiplier) as (
+        values
+          ('source_wiki'::text, 1.0::real),
+          ('related_wiki'::text, 0.88::real),
+          ('duplicate_source'::text, 0.45::real),
+          ('supports'::text, 0.95::real),
+          ('contradicts'::text, 0.75::real)
+      ),
+      one_hop_nodes as (
+        select
+          e.to_type as parent_type,
+          e.to_id as parent_id,
+          e.edge_type,
+          1 as graph_depth,
+          array[e.edge_type]::text[] as graph_path,
+          e.weight * coalesce(e.confidence, 1) * coalesce(ew.multiplier, 0.6) as graph_weight
+        from knowledge_edges e
+        left join edge_weights ew on ew.edge_type = e.edge_type
+        join seed_nodes sn on sn.parent_type = e.from_type and sn.parent_id = e.from_id
+        where e.user_id = $1
+        union all
+        select
+          e.from_type as parent_type,
+          e.from_id as parent_id,
+          e.edge_type,
+          1 as graph_depth,
+          array[e.edge_type]::text[] as graph_path,
+          e.weight * coalesce(e.confidence, 1) * coalesce(ew.multiplier, 0.6) as graph_weight
+        from knowledge_edges e
+        left join edge_weights ew on ew.edge_type = e.edge_type
+        join seed_nodes sn on sn.parent_type = e.to_type and sn.parent_id = e.to_id
+        where e.user_id = $1
+      ),
+      two_hop_nodes as (
+        select
+          e.to_type as parent_type,
+          e.to_id as parent_id,
+          e.edge_type,
+          2 as graph_depth,
+          oh.graph_path || e.edge_type as graph_path,
+          oh.graph_weight * e.weight * coalesce(e.confidence, 1) * coalesce(ew.multiplier, 0.6) * 0.55 as graph_weight
+        from one_hop_nodes oh
+        join knowledge_edges e on e.user_id = $1
+          and e.from_type = oh.parent_type
+          and e.from_id = oh.parent_id
+        left join edge_weights ew on ew.edge_type = e.edge_type
+        where $5::boolean
+        union all
+        select
+          e.from_type as parent_type,
+          e.from_id as parent_id,
+          e.edge_type,
+          2 as graph_depth,
+          oh.graph_path || e.edge_type as graph_path,
+          oh.graph_weight * e.weight * coalesce(e.confidence, 1) * coalesce(ew.multiplier, 0.6) * 0.55 as graph_weight
+        from one_hop_nodes oh
+        join knowledge_edges e on e.user_id = $1
+          and e.to_type = oh.parent_type
+          and e.to_id = oh.parent_id
+        left join edge_weights ew on ew.edge_type = e.edge_type
+        where $5::boolean
+      ),
+      related_nodes as (
+        select * from one_hop_nodes
+        union all
+        select * from two_hop_nodes
+      ),
+      ranked_nodes as (
+        select distinct on (parent_type, parent_id)
+          parent_type,
+          parent_id,
+          edge_type,
+          graph_depth,
+          graph_path,
+          graph_weight
+        from related_nodes
+        where graph_weight >= $6::real
+          and not exists (
+            select 1
+            from seed_nodes sn
+            where sn.parent_type = related_nodes.parent_type and sn.parent_id = related_nodes.parent_id
+          )
+        order by parent_type, parent_id, graph_weight desc, graph_depth asc
+      ),
+      ranked_chunks as (
+        select *,
+          row_number() over (
+            partition by parent_type, parent_id
+            order by title_relevance desc, keyword_rank desc, term_hit desc, graph_weight desc, created_at desc
+          ) as chunk_rank
+        from (
+          select
+            c.id,
+            c.parent_type,
+            c.parent_id,
+            c.content,
+            c.created_at,
+            null::real as distance,
+            rn.graph_depth,
+            rn.edge_type as graph_edge_type,
+            rn.graph_path,
+            rn.graph_weight::real as graph_weight,
+            ts_rank_cd(to_tsvector('simple', c.content), websearch_to_tsquery('simple', $7))::real as keyword_rank,
+            case when c.content ilike any($8::text[]) then 1 else 0 end as term_hit,
+            case
+              when c.parent_type = 'source' and (
+                s.title ilike any($8::text[])
+                or coalesce(s.summary, '') ilike any($8::text[])
+              ) then 1
+              when c.parent_type = 'wiki_page' and wp.title ilike any($8::text[]) then 1
+              else 0
+            end as title_relevance,
+            case when c.parent_type = 'source' then s.id else ws.id end as source_id,
+            case when c.parent_type = 'source' then s.title else ws.title end as source_title,
+            case when c.parent_type = 'source' then s.original_url else ws.original_url end as original_url,
+            case when c.parent_type = 'wiki_page' then wp.slug else wps.slug end as wiki_slug,
+            case when c.parent_type = 'wiki_page' then wp.title else wps.title end as wiki_title
+          from ranked_nodes rn
+          join chunks c on c.user_id = $1 and c.parent_type = rn.parent_type and c.parent_id = rn.parent_id
+          left join sources s on c.parent_type = 'source' and s.id = c.parent_id
+          left join source_wiki_pages swps on swps.source_id = s.id
+          left join wiki_pages wps on wps.id = swps.wiki_page_id
+          left join wiki_pages wp on c.parent_type = 'wiki_page' and wp.id = c.parent_id
+          left join source_wiki_pages swpw on swpw.wiki_page_id = wp.id
+          left join sources ws on ws.id = swpw.source_id
+        ) scored_chunks
+      )
+      select
+        id,
+        parent_type,
+        parent_id,
+        content,
+        created_at,
+        distance,
+        graph_depth,
+        graph_edge_type,
+        graph_path,
+        graph_weight,
+        keyword_rank,
+        source_id,
+        source_title,
+        original_url,
+        wiki_slug,
+        wiki_title
+      from ranked_chunks
+      where chunk_rank <= 2
+      order by graph_weight desc, created_at desc
+      limit $4
+    `,
+    [
+      userId,
+      seedNodes.map((node) => node.parentType),
+      seedNodes.map((node) => node.parentId),
+      limit,
+      intent.graphDepth > 1,
+      intent.minGraphScore,
+      searchQuery,
+      termPatterns,
+    ],
+  );
+
+  return result.rows;
+}
+
 function toRetrievedContext(row: RetrievedChunkRow): RetrievedContext {
   return {
     id: row.id,
@@ -543,6 +815,10 @@ function toRetrievedContext(row: RetrievedChunkRow): RetrievedContext {
     originalUrl: row.original_url,
     vectorScore: 0,
     keywordScore: 0,
+    graphScore: 0,
+    graphDepth: 0,
+    graphEdgeType: null,
+    graphPath: [],
     vectorRankScore: 0,
     keywordRankScore: 0,
     titleScore: 0,
@@ -555,7 +831,7 @@ function scoreContext(context: RetrievedContext) {
   return context.rerankScore || context.vectorScore * 0.35 + context.keywordScore * 0.65;
 }
 
-function rerankContexts(contexts: RetrievedContext[], terms: string[]) {
+function rerankContexts(contexts: RetrievedContext[], terms: string[], intent: RetrievalIntent) {
   const selectedCountByParent = new Map<string, number>();
 
   for (const context of contexts) {
@@ -565,6 +841,7 @@ function rerankContexts(contexts: RetrievedContext[], terms: string[]) {
       context.keywordRankScore * 2.2 +
       context.vectorScore * 0.45 +
       context.keywordScore * 1.3 +
+      context.graphScore * getGraphBoost(context, intent) +
       context.titleScore * 0.35;
     context.matchReasons = buildMatchReasons(context);
   }
@@ -618,7 +895,114 @@ function buildMatchReasons(context: RetrievedContext) {
     reasons.push("标题相关");
   }
 
+  if (context.graphScore > 0) {
+    reasons.push(getGraphReason(context));
+  }
+
   return reasons.length > 0 ? reasons : ["最近片段"];
+}
+
+function inferRetrievalIntent(searchQuery: string): RetrievalIntent {
+  const normalized = searchQuery.toLowerCase();
+
+  if (/(对比|比较|差异|区别|相同|不同|compare|versus|vs\.?)/i.test(normalized)) {
+    return {
+      graphBoost: 1.35,
+      graphDepth: 2,
+      label: "comparison",
+      minGraphScore: 0.14,
+    };
+  }
+
+  if (/(来源|出处|证据|引用|支撑|依据|支持|反驳|冲突|source|citation|evidence|support|contradict)/i.test(normalized)) {
+    return {
+      graphBoost: 1.3,
+      graphDepth: 2,
+      label: "evidence",
+      minGraphScore: 0.15,
+    };
+  }
+
+  if (/(关联|关系|相关|相似|类似|延伸|联系|重复|同类|related|similar|connection|duplicate)/i.test(normalized)) {
+    return {
+      graphBoost: 1.45,
+      graphDepth: 2,
+      label: "relation",
+      minGraphScore: 0.13,
+    };
+  }
+
+  return {
+    graphBoost: 1,
+    graphDepth: 1,
+    label: "balanced",
+    minGraphScore: 0.2,
+  };
+}
+
+function getGraphBoost(context: RetrievedContext, intent: RetrievalIntent) {
+  const depthPenalty = context.graphDepth >= 2 ? 0.72 : 1;
+  const relationBoost = getRelationBoost(context.graphEdgeType);
+  return 1.1 * intent.graphBoost * depthPenalty * relationBoost;
+}
+
+function getRelationBoost(edgeType: string | null) {
+  if (edgeType === "source_wiki") {
+    return 1.05;
+  }
+
+  if (edgeType === "related_wiki") {
+    return 0.95;
+  }
+
+  if (edgeType === "duplicate_source") {
+    return 0.58;
+  }
+
+  if (edgeType === "supports") {
+    return 1.08;
+  }
+
+  if (edgeType === "contradicts") {
+    return 0.82;
+  }
+
+  return 0.75;
+}
+
+function getGraphReason(context: RetrievedContext) {
+  const relationLabels: Record<string, string> = {
+    contradicts: "冲突关系",
+    duplicate_source: "重复来源",
+    related_wiki: "相关知识页",
+    source_wiki: "来源归属",
+    supports: "证据支撑",
+  };
+  const relation = context.graphEdgeType ? relationLabels[context.graphEdgeType] || context.graphEdgeType : "关系扩展";
+  const depth = context.graphDepth > 1 ? `${context.graphDepth}跳` : "1跳";
+
+  return `${depth}${relation}`;
+}
+
+function uniqueSeedNodes(contexts: RetrievedContext[]) {
+  const seen = new Set<string>();
+  const nodes: Array<{ parentId: string; parentType: "source" | "wiki_page" }> = [];
+
+  for (const context of contexts) {
+    const key = `${context.parentType}:${context.parentId}`;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    nodes.push({
+      parentId: context.parentId,
+      parentType: context.parentType,
+    });
+  }
+
+  return nodes;
 }
 
 function scoreKeywordMatch(context: RetrievedContext, terms: string[], sqlRank: number | null) {

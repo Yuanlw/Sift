@@ -104,10 +104,10 @@ export function KnowledgeDiscoveryPanel({
           </div>
         ) : discoveries.map((item) => (
           <article className={`knowledge-discovery-row discovery-${item.type}`} key={item.id}>
-            <div className="knowledge-discovery-type">{getDiscoveryTypeLabel(item.type, locale)}</div>
+            <div className="knowledge-discovery-type">{getDiscoveryTypeLabel(item, locale)}</div>
             <div className="knowledge-discovery-main">
               <strong>{getDiscoveryTitle(item, locale)}</strong>
-              <p>{item.body}</p>
+              <p>{getDiscoveryBody(item, locale)}</p>
               {item.suggestedQuestion ? (
                 <span className="suggested-question-inline">
                   {localeText(locale, "可追问", "Ask")}：{item.suggestedQuestion}
@@ -130,7 +130,12 @@ export function KnowledgeDiscoveryPanel({
                   {localeText(locale, "查看知识页", "Open wiki")}
                 </Link>
               ) : null}
-              <KnowledgeDiscoveryActions discoveryId={item.id} locale={locale} type={item.type} />
+              <KnowledgeDiscoveryActions
+                discoveryId={item.id}
+                locale={locale}
+                mergeEligibility={item.mergeEligibility}
+                type={item.type}
+              />
             </div>
           </article>
         ))}
@@ -139,19 +144,25 @@ export function KnowledgeDiscoveryPanel({
   );
 }
 
-function getDiscoveryTypeLabel(type: KnowledgeDiscoveryView["type"], locale: Locale) {
+function getDiscoveryTypeLabel(item: KnowledgeDiscoveryView, locale: Locale) {
   const labels: Record<KnowledgeDiscoveryView["type"], string> = {
     new_source: localeText(locale, "新资料", "New source"),
-    related_wiki: localeText(locale, "可更新", "Update"),
+    related_wiki: item.mergeEligibility.canMerge
+      ? localeText(locale, "可更新", "Update")
+      : localeText(locale, "相关线索", "Related"),
     duplicate_source: localeText(locale, "疑似重复", "Duplicate"),
     suggested_question: localeText(locale, "建议问题", "Suggested question"),
   };
 
-  return labels[type];
+  return labels[item.type];
 }
 
 function getDiscoveryTitle(item: KnowledgeDiscoveryView, locale: Locale) {
   if (item.type === "related_wiki" && item.relatedWikiPage) {
+    if (!item.mergeEligibility.canMerge) {
+      return localeText(locale, `可能与「${item.relatedWikiPage.title}」相关`, `May relate to "${item.relatedWikiPage.title}"`);
+    }
+
     return localeText(locale, `可能更新「${item.relatedWikiPage.title}」`, `May update "${item.relatedWikiPage.title}"`);
   }
 
@@ -160,4 +171,16 @@ function getDiscoveryTitle(item: KnowledgeDiscoveryView, locale: Locale) {
   }
 
   return item.title;
+}
+
+function getDiscoveryBody(item: KnowledgeDiscoveryView, locale: Locale) {
+  if (item.type === "related_wiki" && !item.mergeEligibility.canMerge) {
+    return localeText(
+      locale,
+      `${item.body} 这类线索只用于查看和追问，不建议直接合并。`,
+      `${item.body} This is a reference link, not a merge candidate.`,
+    );
+  }
+
+  return item.body;
 }

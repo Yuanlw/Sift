@@ -45,6 +45,8 @@ npm run docker:migrate
 npm run docker:reset
 ```
 
+已有数据的部署不要用 reset 当迁移手段。reset 会删除 Docker volume 中的数据；非一次性测试环境应使用 `npm run docker:migrate` 或手动执行 `supabase/migrations/*.sql`。
+
 默认情况下，容器内的 Sift 会通过下面地址访问宿主机上的本地模型服务：
 
 ```text
@@ -113,6 +115,14 @@ http://127.0.0.1:3000
 - 数据库兼容 Postgres + pgvector。
 - 执行同一份 schema。
 - 模型 provider 提供 Sift adapter 支持的接口。
+
+当前公开托管还不是推荐默认形态。账号体系已有本地邮箱密码、HttpOnly session、登录限流和核心页面保护，但仍缺邮箱验证、找回密码、团队/组织、邀请和完整多租户运营能力。公开部署前应把这些作为单独阶段处理。
+
+如果放在反向代理或认证网关后面：
+
+- 默认使用 `SIFT_REQUIRE_AUTH=true` 和 Sift 自己的 session。
+- 只有网关已经完成认证、并能保证用户 UUID 请求头不可被外部伪造时，才开启 `SIFT_TRUST_USER_HEADER=true`。
+- 多账号场景下使用 Agent Bearer Token 时，必须配置 `SIFT_AGENT_USER_ID`。
 
 ## 模型部署原则
 

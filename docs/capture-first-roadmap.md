@@ -6,12 +6,32 @@ Sift 不做通用 Agent，不从头造 Claude Code、Codex 或 pi-mono。
 
 Sift 的目标是做 Capture-first LLM Wiki 和 Knowledge Agent Layer：
 
-- 前端负责丝滑收集用户看到、听到、想到的一切资料。
-- 后端负责极速保存原始数据，再异步提取、整理、关联、检索和引用。
+- 前端负责丝滑收集用户看到、听到、想到的一切资料，包括还没想清楚、还没命名、还没分类的半成品想法和线索。
+- 后端负责极速保存原始数据，再异步提取、分析、关联、融合、检索和引用。
 - Sift 作为外部 Agent 的长期知识底座，而不是替代外部 Agent 的通用执行环境。
 - 复杂执行动作交给 Claude Code、Codex、pi-mono 等 Agent 工作台。
 
 后续关于产品目标、技术路线和优先级，都应以这个边界为准。
+
+## 产品目标
+
+Sift 的产品目标不是让用户更努力地做知识管理，也不是把分类、打标签、归档和定期整理换一种界面重新交给用户。
+
+Sift 的目标是让用户用最低压力保存每天遇到的有价值信息，然后由 AI 在后台完成分析、关联和融合，在用户需要写作、研究、判断、问答或调用 Agent 时，给出可直接使用、可追溯来源的内容。
+
+用户保存时不应该被要求先回答这些问题：
+
+- 这条资料叫什么标题？
+- 应该放进哪个文件夹？
+- 该打什么标签？
+- 将来会用在什么地方？
+- 是否已经想清楚、值得正式记录？
+
+Sift 应该允许用户先保存粗糙、零散、不完整的材料。真正的分析、关联、融合和结构化发生在后台处理、后续回顾、主题沉淀和知识复用中。
+
+产品表达上应避免让用户感觉“我还要整理一个知识库”。用户侧承诺应是：
+
+> 你不用整理。Sift 会把你保存的信息，分析成以后能直接使用的内容。
 
 ## 体验原则
 
@@ -34,6 +54,8 @@ Sift 的目标是做 Capture-first LLM Wiki 和 Knowledge Agent Layer：
 - embedding 写入
 
 这些都应该进入后台任务。用户应先看到资料已经进入 Inbox，再看到处理结果逐步出现。
+
+Inbox 不是一个低价值的临时垃圾箱，而是 Sift 的第一主场。它负责接住用户的好奇心、灵感、材料和待判断线索；长期知识结构和可用内容则由 Source、WikiPage、Search、Ask 和 Agent Context 在后台慢慢生成。
 
 ## 目标链路
 
@@ -143,8 +165,67 @@ failed
 - 来源引用：回答中的关键判断必须能回到 Source 或 WikiPage。
 - 去重合并：重复资料不要不断生成孤立 WikiPage。
 - 主题沉淀：多个 Source 应逐步沉淀到长期主题 WikiPage。
+- 隐形关系层：记录 Source / WikiPage 之间的强证据关系，用于检索扩展、推荐和洞察，而不是先做知识图谱可视化。
 
 检索和分析质量是关键动作，不应只依赖模型自由发挥。
+
+### P10：隐形知识关系层
+
+- 新增 `knowledge_edges`，记录 Source / WikiPage 之间的 `source_wiki`、`related_wiki`、`duplicate_source` 等关系。
+- Capture 处理完成后写入直接关系边，并复用相似 Wiki / 重复 Source 结果沉淀关系。
+- Ask / Agent 混合检索在关键词和向量召回后，沿 `knowledge_edges` 做一跳关系扩展，再统一 rerank 和引用。
+- 第一阶段不做图谱可视化；关系层先服务“更准的问答、更完整的 Agent 上下文、更少人工整理”。
+- 第一阶段也不部署独立图数据库；先用 Postgres 承载 `knowledge_edges`，等路径查询、图算法或关系规模真正成为瓶颈时，再评估 Neo4j / Kuzu 并纳入 Docker。
+
+### P11：Graph-aware Retrieval
+
+P11 不再解决“有没有关系边”，而是让检索理解关系边的含义。
+
+- 查询意图识别：普通问答默认一跳；当问题明显在问关联、来源、证据、对比、重复内容时，允许更强的关系召回。
+- 关系类型加权：`source_wiki`、`related_wiki`、`duplicate_source`、`supports`、`contradicts` 不同权重，避免重复资料和弱关系放大噪音。
+- 有条件二跳扩展：只在关系型、证据型、对比型问题里启用，并对二跳结果降权。
+- 关系感知 rerank：最终排序同时考虑关键词、向量、标题和关系强度。
+- 可解释召回：Ask / Agent 返回关系跳数、关系类型和路径，让用户知道资料为什么被带出来。
+- 局部关系展示：Source / Wiki 详情页展示当前资料的一跳关系、关系类型、强度和可点击目标；先服务阅读路径，不做全库大画布。
+
+P10/P11 完成状态（2026-05-08）：
+
+- 新增 `knowledge_edges` 和对应迁移/schema，处理完成后写入 Source-Wiki、相似 Wiki、重复 Source 关系。
+- `retrieveHybridContexts` 已在关键词/向量 seed 之后做关系扩展，并按查询意图控制一跳/二跳。
+- Ask、Wiki Ask 和 Agent Query 返回关系扩展元数据，外部 Agent 可以看到关系路径。
+- Source / Wiki 详情页已展示一跳关系卡片，帮助用户顺着来源和知识页阅读。
+- 当前仍使用 Postgres 关系表，不引入独立图数据库。
+
+### P12：知识融合与一键合并
+
+P12 的目标是把 P10/P11 发现的关系转化为真正减少用户整理时间的动作。
+
+它不要求用户手工维护图谱，也不把相似资料只停留在“看看这个也相关”的提示上，而是让 Sift 在可控范围内把新资料融合进已有长期 WikiPage。
+
+第一版范围：
+
+- 待处理发现中的 `related_wiki` 和 `duplicate_source` 可以生成“合并预览”。
+- 合并预览由 AI 生成，但必须先给用户确认；用户可以在确认前修改标题、改动摘要和 Markdown 正文。
+- 确认合并后，目标 WikiPage 被更新，被并入的临时 WikiPage 自动归档，避免默认知识页列表继续碎片化。
+- 新资料 Source 会补充关联到目标 WikiPage，`source_wiki_pages` 和 `knowledge_edges` 同步写入，保证后续 Ask / Agent 能沿来源追溯。
+- 合并时记录 `wiki_merge_histories`，保存目标 Wiki 合并前后的正文、被并入 Wiki、相关 Source 和摘要，作为后续回滚或审计依据。
+- 目标 Wiki 的 chunks 会按合并后正文重建；embedding 失败时仍保留文本 chunks，后续兜底任务可以补写向量。
+
+边界：
+
+- 不做全库自动无确认合并。
+- 不做复杂协同编辑和冲突解决。
+- 不把被并入 Wiki 直接删除；先归档，保证可追溯。
+- 回滚第一版先保留数据基础，后续再做可视化恢复入口。
+
+P12 完成状态（2026-05-08）：
+
+- 待处理发现中的高置信度 `related_wiki` / `duplicate_source` 已出现“预览合并”入口。
+- 合并预览由模型生成；用户确认前可以编辑标题、改动摘要和合并后 Markdown。
+- 确认合并后，目标 WikiPage 更新，被并入 WikiPage 归档，新 Source 关联到目标 WikiPage。
+- 合并会写入 `wiki_merge_histories`，并同步维护 `source_wiki_pages`、`knowledge_edges` 和目标 Wiki chunks。
+- 修复了合并候选查询按不存在字段 `source_wiki_pages.updated_at` 排序的问题，改为使用 `created_at`。
+- 当前还没有可视化回滚入口；回滚所需的历史数据已落库。
 
 ## 与外部 Agent 的关系
 
@@ -361,6 +442,57 @@ P8.4 完成状态（2026-05-06）：
 - 设置中心「订单、发票与凭证」区新增订阅状态和“管理账单”入口。
 - 订单、发票、支付方式、取消订阅和套餐变更交给 Stripe Customer Portal，Sift 只同步订阅状态和额度结果。
 - Stripe Customer Portal 未配置、本地单租户或尚未产生 Stripe customer 时，账单入口保持禁用并给出产品说明。
+
+### P9：账号体系基础
+
+- 用真实账号替代默认单用户假身份。
+- 支持本地邮箱密码注册、登录和退出。
+- 使用 HttpOnly session cookie 保护核心页面和用户 API。
+- 第一个注册账号自动认领 `SIFT_SINGLE_USER_ID` 旧数据。
+- 设置中心展示当前账号邮箱、身份来源和退出登录入口。
+- 保留 `SIFT_TRUST_USER_HEADER` 给受信网关/反向代理模式使用。
+- 团队空间、邀请成员、邮箱验证、找回密码、OAuth 和 workspace 权限留到后续阶段。
+
+P9.0 完成状态（2026-05-07）：
+
+- 新增 `users` 和 `user_sessions`。
+- 新增 `/signup`、`/login` 和 `POST /api/auth/logout`。
+- 新增 `POST /api/auth/signup` 和 `POST /api/auth/login`。
+- 新增 middleware，未登录访问 `/`、`/inbox`、`/sources`、`/wiki`、`/settings` 和用户 API 时跳转或返回 401。
+- `getUserContext...` 优先读取登录 session，其次保留 Agent API Key、受信 Header 和可选默认用户 fallback。
+- `.env.example` 和本地启动文档新增 `SIFT_REQUIRE_AUTH`、`SIFT_SESSION_SECRET`。
+- 本地验证中，第一个账号已认领默认用户下的历史资料。
+
+P9.1 完成状态（2026-05-07）：
+
+- 新增 `POST/PATCH /api/account/profile`，支持在设置中心更新显示名称，并刷新当前 session cookie 中的账号展示信息。
+- 新增 `POST /api/account/password`，修改密码时必须校验当前密码；成功后保留当前会话，并让其他未失效会话失效。
+- `getUserContext...` 改为服务端校验 `user_sessions.revoked_at` 和 `expires_at`，避免只凭未过期 Cookie 判断登录态。
+- Agent API / MCP 在只有一个真实账号时会自动归属到该账号；配置 `SIFT_AGENT_API_KEY` 后再由 Bearer Token 保护接口。
+- 设置中心新增个人资料和修改密码表单，账号维护不再只停留在“登录/退出”。
+
+P9.2 修复状态（2026-05-07）：
+
+- Agent API / MCP 在 `SIFT_REQUIRE_AUTH=true` 时不再允许匿名访问；必须携带登录 session 或正确的 `SIFT_AGENT_API_KEY`。
+- 多账号场景下 Agent API Key 必须通过 `SIFT_AGENT_USER_ID` 显式绑定用户，否则拒绝使用默认空用户。
+- 公开注册默认只允许创建第一个账号；后续注册需要显式开启 `SIFT_ALLOW_PUBLIC_SIGNUP=true`。
+- 未登录访问服务端页面时兜底跳转 `/login`，避免直接抛出 `Authentication required` 开发报错。
+- `npm run smoke:agent` 已补登录流程，可在 P9 默认登录模式下验证 capture-first 与 Agent/MCP 链路。
+
+P9.3 登录安全增强（2026-05-07）：
+
+- 新增 `auth_rate_limits`，按邮箱和来源 IP 记录失败登录，15 分钟内失败 5 次后锁定 15 分钟。
+- 登录成功后清理对应邮箱/IP 的失败记录，避免用户恢复正确密码后继续被历史失败拖住。
+- 登录、注册、资料修改和改密码接口增加基础同源校验；带有跨站 `Origin` / `Referer` 的浏览器请求会被拒绝。
+- 密码长度增加上限，避免异常长密码造成不必要的 hash 计算压力。
+
+P9.4 安全和验证修复（2026-05-08）：
+
+- 登录态写接口补齐统一同源校验，包括 Capture 创建/导入/补充/重试/忽略、Ask、Wiki Ask、发现合并/忽略、推荐隐藏、资料归档/删除、模型设置和账单入口。
+- Agent/MCP、Inngest、Stripe Webhook、维护任务仍保持外部集成认证方式，不强制浏览器同源校验。
+- `loadKnowledgeDiscoveries` 的 Source/Wiki join 已按 `kd.user_id` 收口，避免异常跨用户引用泄露标题或 slug。
+- `npm run smoke:agent` 不再在零账号状态下直接写入 smoke 用户，避免绕过首个账号认领默认数据逻辑。
+- smoke provision 会清理邮箱和默认 IP 的登录限流残留，减少本地验证被旧失败记录误伤。
 
 当前实现起点：
 

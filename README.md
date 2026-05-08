@@ -8,6 +8,10 @@ Sift 是一个 capture-first 的个人知识库。
 
 > Sift 把你每天看到、想到、收藏的信息，沉淀成以后真正能用的知识资产。
 
+Sift 不要求你在保存时就想清楚标题、分类、标签或用途。看到一个以后可能有用的东西，先丢进来；提取、分析、关联、融合、索引和引用可以在后台慢慢发生。
+
+更直白地说：你不用整理。Sift 会把你保存的信息，分析成以后能直接使用的内容。
+
 ## 为什么做 Sift
 
 很多人不缺收藏工具，真正缺的是复用能力。
@@ -27,6 +31,10 @@ Sift 想把这条链路闭合起来：
 产品的核心原则是：
 
 > 保存必须快。理解可以在后台慢慢发生。
+
+更具体地说：
+
+> 用户不需要先想清楚。Sift 要先接住，再由 AI 分析、关联、融合成可用内容。
 
 ## 现在能做什么
 
@@ -51,7 +59,7 @@ Sift 不是通用 Agent Runtime。
 
 - 收集用户看到、读到、保存和想到的资料。
 - 保留原始材料和可追溯来源。
-- 把资料整理成可复用的知识页和上下文片段。
+- 把资料分析、关联和融合成可复用的知识页、答案和上下文片段。
 - 帮外部 Agent 获取可信的、属于用户自己的长期知识。
 
 复杂执行动作应该交给专门的 Agent 工作台。Sift 提供记忆、来源、引用和知识结构。
@@ -65,10 +73,13 @@ Sift 现在已经是一个可用的个人 MVP：
 - P6：外部收藏导入，包括 URL、浏览器书签、相册截图。
 - P7：近期回顾、知识发现、推荐、长列表管理、归档/恢复/删除、资料管理搜索。
 - P8：模型调用计量、模型策略文档、账号/模型/消耗设置中心、智能额度账本。
+- P9：本地邮箱密码账号、HttpOnly session、核心页面保护、首个账号认领默认数据、资料维护、改密码和登录安全。
+- P10/P11：隐形知识关系层和 graph-aware retrieval，Ask / Agent 查询可以利用 Source-Wiki、相关 Wiki、重复 Source 等关系扩展召回。
+- P12：人工确认的一键合并，把高置信度 related/duplicate 发现融合进已有 WikiPage，并保留合并历史、来源关系和 chunks 重建。
 
 它已经适合个人日常试用和持续产品 review。
 
-它还不是成熟的公开托管 SaaS 产品。在更大范围部署前，还需要补强认证、多租户、生产任务队列、模型 provider、评测集、回归测试和更清晰的账号/部署体系。
+它还不是成熟的公开托管 SaaS 产品。在更大范围部署前，还需要补强邮箱验证、找回密码、团队/多租户、生产任务队列、模型 provider、评测集、回归测试、回滚入口和更清晰的账号/部署体系。
 
 当前完整度评估见 [Project Review](docs/project-review.md)。
 
@@ -138,6 +149,7 @@ SaaS 计费使用 Stripe Checkout。托管部署需要在 Stripe 后台创建订
 ## 文档
 
 - [Project Review](docs/project-review.md)
+- [Development Log](docs/development-log.md)
 - [Model Strategy and Billing](docs/model-strategy-and-billing.md)
 - [Capture-first Roadmap](docs/capture-first-roadmap.md)
 - [Mobile-first Capture Roadmap](docs/mobile-capture-roadmap.md)
@@ -145,6 +157,7 @@ SaaS 计费使用 Stripe Checkout。托管部署需要在 Stripe 后台创建订
 - [Deployment](docs/deployment.md)
 - [Agent API / MCP](docs/agent-api.md)
 - [Product Brief](docs/product-brief.md)
+- [Launch Copy](docs/launch-copy.md)
 - [MVP Scope](docs/mvp.md)
 - [Architecture](docs/architecture.md)
 - [Data Model](docs/data-model.md)

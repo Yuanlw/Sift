@@ -93,6 +93,17 @@ textarea {
   color: var(--foreground);
 }
 
+.nav a.is-active {
+  background: #e5f1ed;
+  box-shadow: inset 0 0 0 1px #c7ded5;
+  color: var(--accent-strong);
+}
+
+.nav a.is-active:hover {
+  background: #dcebe5;
+  color: var(--accent-strong);
+}
+
 .topbar-actions {
   align-items: center;
   display: flex;
@@ -149,6 +160,69 @@ textarea {
 .language-toggle button.is-active {
   background: var(--panel);
   color: var(--foreground);
+}
+
+.auth-page {
+  display: grid;
+  min-height: calc(100vh - 220px);
+  place-items: center;
+  padding: 32px 16px 64px;
+}
+
+.auth-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  display: grid;
+  gap: 18px;
+  max-width: 440px;
+  padding: 28px;
+  width: 100%;
+}
+
+.auth-panel h1 {
+  font-size: 34px;
+  line-height: 1.05;
+}
+
+.auth-panel p {
+  font-size: 15px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-form label {
+  color: var(--ink-soft);
+  display: grid;
+  font-size: 13px;
+  font-weight: 750;
+  gap: 7px;
+}
+
+.auth-form input {
+  background: #fbfbf7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--foreground);
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.auth-error {
+  background: #fff3ed;
+  border: 1px solid #f0c8b8;
+  border-radius: 8px;
+  color: #8a331c;
+  padding: 10px 12px;
+}
+
+.auth-switch a {
+  color: var(--accent);
+  font-weight: 750;
 }
 
 .main {
@@ -1214,10 +1288,71 @@ p {
   opacity: 0.65;
 }
 
+.discovery-action-primary {
+  background: #e7f3ef;
+  border-color: #bdd9cf;
+  color: var(--accent-strong);
+}
+
 .discovery-action-danger {
   background: #fff7f6;
   border-color: #efcbc7;
   color: #9d3128;
+}
+
+.merge-preview-dialog {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  display: grid;
+  gap: 12px;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 14px;
+  width: 100%;
+}
+
+.merge-preview-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.merge-preview-dialog label {
+  display: grid;
+  gap: 6px;
+}
+
+.merge-preview-dialog label span {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.merge-preview-dialog input,
+.merge-preview-dialog textarea {
+  background: #fbfbf7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--foreground);
+  font: inherit;
+  line-height: 1.45;
+  padding: 10px 11px;
+  width: 100%;
+}
+
+.merge-preview-dialog textarea {
+  resize: vertical;
+}
+
+.merge-preview-markdown {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.merge-preview-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .section-heading {
@@ -1823,6 +1958,110 @@ p {
   padding-top: 20px;
 }
 
+.panel-heading {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.panel-heading h3 {
+  margin: 0;
+}
+
+.knowledge-graph-panel {
+  gap: 14px;
+}
+
+.knowledge-graph-list {
+  display: grid;
+  gap: 8px;
+}
+
+.knowledge-graph-card {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-left: 3px solid #7f9c93;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.knowledge-graph-card:hover {
+  border-color: #91aaa1;
+  transform: translateY(-1px);
+}
+
+.knowledge-graph-card.relation-duplicate_source {
+  border-left-color: #c98077;
+}
+
+.knowledge-graph-card.relation-related_wiki {
+  border-left-color: #7fb2a2;
+}
+
+.knowledge-graph-card.relation-source_wiki {
+  border-left-color: #8c9fba;
+}
+
+.knowledge-graph-card.relation-supports {
+  border-left-color: #789b73;
+}
+
+.knowledge-graph-card.relation-contradicts {
+  border-left-color: #b76e6a;
+}
+
+.knowledge-graph-card strong,
+.knowledge-graph-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.knowledge-graph-card strong {
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.knowledge-graph-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.knowledge-graph-card-top {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.knowledge-graph-type,
+.knowledge-graph-score {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.knowledge-graph-type {
+  background: #f1f1ee;
+  border: 1px solid var(--line);
+  color: var(--foreground);
+}
+
+.knowledge-graph-score {
+  background: #e8f1ed;
+  color: var(--accent-strong);
+}
+
 .block-heading {
   align-items: center;
   display: flex;
@@ -2280,6 +2519,74 @@ p {
 
 .settings-section-heading p {
   max-width: 760px;
+}
+
+.settings-inline-form {
+  margin-top: 16px;
+}
+
+.settings-message {
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px 14px;
+}
+
+.settings-message-success {
+  background: #e5f1ed;
+  border: 1px solid #c7ded5;
+  color: var(--accent-strong);
+}
+
+.settings-message-error {
+  background: #fff1ed;
+  border: 1px solid #f0c9bb;
+  color: #8a321d;
+}
+
+.account-management-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.account-management-form {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.account-management-form h3 {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.account-management-form p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.account-management-form label {
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  font-weight: 760;
+  gap: 7px;
+}
+
+.account-management-form input {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--foreground);
+  font: inherit;
+  min-width: 0;
+  padding: 11px 12px;
 }
 
 .settings-doc-note {
@@ -3304,6 +3611,7 @@ p {
   .settings-model-groups,
   .settings-detail-grid,
   .settings-note-grid,
+  .account-management-grid,
   .model-mode-selector,
   .custom-model-grid,
     .quota-overview,

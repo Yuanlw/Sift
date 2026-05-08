@@ -3,6 +3,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { transaction } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
 import { deleteArchivedWikiPages } from "@/lib/permanent-delete";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { safeDecodeRouteParam } from "@/lib/route-params";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
@@ -13,13 +14,19 @@ interface WikiDeleteRow {
 
 export async function POST(request: Request, { params }: { params: { slug: string } }) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     const slug = safeDecodeRouteParam(params.slug);
 
     if (!slug) {
       return NextResponse.json({ error: "Invalid wiki slug." }, { status: 400 });
     }
 
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const deleted = await transaction(async (client) => {
       const page = await client.query<WikiDeleteRow>(
         `

@@ -20,6 +20,12 @@ export interface WikiAnswer {
   }>;
 }
 
+export interface MergedWikiDraft {
+  title: string;
+  wikiMarkdown: string;
+  summaryOfChanges: string;
+}
+
 export async function generateKnowledgeDraft(input: {
   modelContext?: ModelCallContext;
   title: string;
@@ -144,6 +150,12 @@ export async function answerKnowledgeBaseQuestion(input: {
     sourceId?: string | null;
     wikiSlug?: string | null;
     originalUrl?: string | null;
+    matchReasons?: string[];
+    graph?: {
+      depth: number;
+      relationType: string | null;
+      path: string[];
+    };
   }>;
 }): Promise<WikiAnswer> {
   const contextText = input.contexts
@@ -151,6 +163,8 @@ export async function answerKnowledgeBaseQuestion(input: {
       [
         `[${context.label}] ${context.parentType === "source" ? "Source" : "WikiPage"}：${context.title}`,
         context.originalUrl ? `原始链接：${context.originalUrl}` : "",
+        context.matchReasons?.length ? `召回理由：${context.matchReasons.join(" / ")}` : "",
+        context.graph ? `关系路径：${formatGraphPathForPrompt(context.graph)}` : "",
         "片段：",
         context.content.slice(0, 1800),
       ]
@@ -210,6 +224,95 @@ export async function answerKnowledgeBaseQuestion(input: {
     answer: parsed.answer || "资料不足，暂时无法回答这个问题。",
     citations,
   };
+}
+
+export async function generateMergedWikiPage(input: {
+  modelContext?: ModelCallContext;
+  targetWiki: {
+    title: string;
+    markdown: string;
+  };
+  incomingWiki: {
+    title: string;
+    markdown: string;
+  };
+  sources: Array<{
+    label: string;
+    title: string;
+    summary?: string | null;
+    originalUrl?: string | null;
+    extractedText: string;
+  }>;
+}): Promise<MergedWikiDraft> {
+  const sourceContext = input.sources
+    .map((source) =>
+      [
+        `[${source.label}] ${source.title}`,
+        source.originalUrl ? `原始链接：${source.originalUrl}` : "",
+        source.summary ? `摘要：${source.summary}` : "",
+        "正文：",
+        source.extractedText.slice(0, 7000),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .join("\n\n---\n\n");
+
+  const prompt = [
+    "你是 Sift 的知识融合助手。",
+    "任务：把一篇新生成或相关的 WikiPage 融合进一个已有长期 WikiPage。",
+    "目标不是简单拼接，而是去重、保留差异、补充新证据，并让结果更适合以后写作、研究、问答和 Agent 检索。",
+    "必须只基于给定 Wiki 和 Source 内容，不要编造新事实。",
+    "合并后的 Markdown 要保留清晰标题、分节和来源标记；关键新增判断要标注 [S1]、[S2] 等来源。",
+    "如果两页内容重复，应合并成一处，并在文字里体现证据重复或互相印证；如果存在不确定或冲突，要单独指出。",
+    "只输出一个 JSON 对象，不要输出 Markdown 代码块，不要在 JSON 前后添加解释。",
+    "",
+    "JSON 字段：title, wikiMarkdown, summaryOfChanges。",
+    "",
+    `目标 Wiki 标题：${input.targetWiki.title}`,
+    "目标 Wiki 当前内容：",
+    input.targetWiki.markdown.slice(0, 12000),
+    "",
+    `待合并 Wiki 标题：${input.incomingWiki.title}`,
+    "待合并 Wiki 内容：",
+    input.incomingWiki.markdown.slice(0, 10000),
+    "",
+    "支撑 Sources：",
+    sourceContext || "无额外 Source。",
+  ].join("\n");
+
+  const content = await createChatCompletion({
+    messages: [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    responseFormat: "json_object",
+  }, input.modelContext);
+
+  const parsed = JSON.parse(extractJsonObject(content)) as Partial<MergedWikiDraft>;
+
+  return {
+    title: parsed.title || input.targetWiki.title,
+    wikiMarkdown: parsed.wikiMarkdown || input.targetWiki.markdown,
+    summaryOfChanges: parsed.summaryOfChanges || "已融合相关资料。",
+  };
+}
+
+function formatGraphPathForPrompt(graph: { depth: number; relationType: string | null; path: string[] }) {
+  const relationLabels: Record<string, string> = {
+    contradicts: "冲突关系",
+    duplicate_source: "重复来源",
+    related_wiki: "相关知识页",
+    source_wiki: "来源归属",
+    supports: "证据支撑",
+  };
+  const path = (graph.path.length > 0 ? graph.path : graph.relationType ? [graph.relationType] : [])
+    .map((relation) => relationLabels[relation] || relation)
+    .join(" -> ");
+
+  return path ? `${graph.depth}跳：${path}` : `${graph.depth}跳关系`;
 }
 
 export async function embedTexts(texts: string[], modelContext?: ModelCallContext) {

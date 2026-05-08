@@ -14,6 +14,18 @@ export async function deleteArchivedSources(
 
   await client.query(
     `
+      delete from knowledge_edges
+      where user_id = $1
+        and (
+          (from_type = 'source' and from_id = any($2::uuid[]))
+          or (to_type = 'source' and to_id = any($2::uuid[]))
+        )
+    `,
+    [input.userId, input.sourceIds],
+  );
+
+  await client.query(
+    `
       delete from chunks
       where user_id = $1
         and parent_type = 'source'
@@ -54,6 +66,18 @@ export async function deleteArchivedWikiPages(
   if (input.slugs.length === 0 || input.wikiPageIds.length === 0) {
     return;
   }
+
+  await client.query(
+    `
+      delete from knowledge_edges
+      where user_id = $1
+        and (
+          (from_type = 'wiki_page' and from_id = any($2::uuid[]))
+          or (to_type = 'wiki_page' and to_id = any($2::uuid[]))
+        )
+    `,
+    [input.userId, input.wikiPageIds],
+  );
 
   await client.query(
     `

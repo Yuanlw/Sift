@@ -1,16 +1,21 @@
-import { randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID, scrypt as scryptCallback } from "crypto";
 import { unlink } from "fs/promises";
 import path from "path";
 import pg from "pg";
 import nextEnv from "@next/env";
+import { promisify } from "util";
 import { deflateSync } from "zlib";
 
 const { Client } = pg;
 const { loadEnvConfig } = nextEnv;
 loadEnvConfig(process.cwd());
+const scrypt = promisify(scryptCallback);
 
 const baseUrl = trimTrailingSlash(process.env.SIFT_BASE_URL || "http://localhost:3000");
 const agentApiKey = process.env.SIFT_AGENT_API_KEY || "";
+const authRequired = process.env.SIFT_REQUIRE_AUTH !== "false";
+const smokeEmail = process.env.SIFT_SMOKE_EMAIL || "local@sift.dev";
+const smokePassword = process.env.SIFT_SMOKE_PASSWORD || "SiftLocal123!";
 const marker = `codex-smoke-${Date.now()}-${randomUUID().slice(0, 8)}`;
 const headers = {
   "Content-Type": "application/json",
@@ -47,6 +52,10 @@ const FONT = {
 
 try {
   await client.connect();
+  if (authRequired) {
+    await ensureSmokeUser();
+    await authenticateSmokeUser();
+  }
   await assertServerReachable();
   await assertMcpInitialize();
   await assertMcpToolsList();
@@ -151,8 +160,41 @@ async function assertCaptureFirstE2e() {
 
   const chineseSlug = `中文-smoke-${marker.slice(-8)}`;
   await client.query("update wiki_pages set slug = $1 where id = $2", [chineseSlug, textRow.wiki_id]);
+  await client.query(
+    `
+      insert into knowledge_edges (
+        user_id,
+        from_type,
+        from_id,
+        to_type,
+        to_id,
+        edge_type,
+        weight,
+        confidence,
+        evidence,
+        dedupe_key
+      )
+      select
+        c.user_id,
+        'wiki_page',
+        $1::uuid,
+        'wiki_page',
+        $2::uuid,
+        'related_wiki',
+        0.9,
+        0.95,
+        '{"reason":"smoke_graph_aware_retrieval"}'::jsonb,
+        'smoke:' || $1::text || ':related:' || $2::text
+      from captures c
+      where c.id = $3
+      on conflict (user_id, dedupe_key) do nothing
+    `,
+    [textRow.wiki_id, imageRow.wiki_id, textCaptureId],
+  );
 
-  const wikiResponse = await fetch(`${baseUrl}/wiki/${encodeURIComponent(chineseSlug)}`);
+  const wikiResponse = await fetch(`${baseUrl}/wiki/${encodeURIComponent(chineseSlug)}`, {
+    headers: getNonJsonHeaders(),
+  });
   const wikiHtml = await wikiResponse.text();
   assert(wikiResponse.ok, "Encoded Chinese wiki slug should render a Wiki page", {
     status: wikiResponse.status,
@@ -180,6 +222,19 @@ async function assertCaptureFirstE2e() {
   const agentBody = await readJson(agentResponse);
   assert(agentResponse.ok, "Agent Query should return 2xx for OCR content", agentBody);
   assert((agentBody.contexts || []).length > 0, "Agent Query should return OCR contexts", agentBody);
+
+  const graphResponse = await postJson("/api/agent/query", {
+    query: `相关资料 ${marker}`,
+    limit: 8,
+  });
+  const graphBody = await readJson(graphResponse);
+  const graphContexts = graphBody.contexts || [];
+  assert(graphResponse.ok, "Agent Query should return 2xx for graph-aware retrieval", graphBody);
+  assert(
+    graphContexts.some((context) => context.scores?.graph > 0 && context.graph?.path?.length > 0),
+    "Agent Query should expose graph-aware retrieval metadata",
+    graphBody,
+  );
 }
 
 async function createTextCapture() {
@@ -206,6 +261,7 @@ async function createImageCapture() {
 
   const response = await fetch(`${baseUrl}/api/captures`, {
     method: "POST",
+    headers: getNonJsonHeaders(),
     body: formData,
   });
   const body = await readJson(response);
@@ -222,6 +278,80 @@ async function createImageCapture() {
   }
 
   return captureId;
+}
+
+async function authenticateSmokeUser() {
+  let response = await postJson("/api/auth/login", {
+    email: smokeEmail,
+    password: smokePassword,
+  });
+
+  if (!response.ok) {
+    response = await postJson("/api/auth/signup", {
+      displayName: "Sift Smoke",
+      email: smokeEmail,
+      password: smokePassword,
+    });
+  }
+
+  const body = await readJson(response);
+  assert(response.ok, "Smoke auth should log in or create a test account", {
+    ...body,
+    hint: "Set SIFT_SMOKE_EMAIL/SIFT_SMOKE_PASSWORD to an existing account, or enable first-account signup on a fresh database.",
+    status: response.status,
+  });
+
+  const cookie = extractCookie(response.headers.get("set-cookie"));
+  assert(cookie, "Smoke auth should return a session cookie", body);
+  headers.Cookie = cookie;
+}
+
+async function ensureSmokeUser() {
+  const provisionSetting = process.env.SIFT_SMOKE_PROVISION_USER;
+  const shouldProvision =
+    provisionSetting === "true" || (provisionSetting !== "false" && smokeEmail.trim().toLowerCase() === "local@sift.dev");
+
+  if (!shouldProvision) {
+    return;
+  }
+
+  const email = smokeEmail.trim().toLowerCase();
+  const passwordHash = await hashSmokePassword(smokePassword);
+  const userCount = await client.query("select count(*)::int as count from users");
+
+  if ((userCount.rows[0]?.count || 0) === 0) {
+    return;
+  }
+
+  await client.query(
+    `
+      insert into users (email, display_name, password_hash)
+      values ($1, $2, $3)
+      on conflict (email) do update
+      set password_hash = excluded.password_hash,
+          display_name = coalesce(users.display_name, excluded.display_name),
+          updated_at = now()
+    `,
+    [email, "Sift Smoke", passwordHash],
+  );
+  await client.query("delete from auth_rate_limits where key = any($1::text[])", [
+    [getEmailLoginRateLimitKey(email), getIpLoginRateLimitKey("unknown")],
+  ]);
+}
+
+async function hashSmokePassword(password) {
+  const salt = randomBytes(16).toString("base64url");
+  const derivedKey = await scrypt(password, salt, 64);
+
+  return `scrypt$${salt}$${Buffer.from(derivedKey).toString("base64url")}`;
+}
+
+function getEmailLoginRateLimitKey(email) {
+  return createHash("sha256").update(`login:email:${email.trim().toLowerCase()}`).digest("hex");
+}
+
+function getIpLoginRateLimitKey(ip) {
+  return createHash("sha256").update(`login:ip:${ip}`).digest("hex");
 }
 
 async function waitForCaptureCompletion(captureIds) {
@@ -317,6 +447,22 @@ async function cleanupSmokeData() {
       `,
       [captureIds, targetWikiIds],
     );
+    await client.query(
+      `
+        with target_sources as (
+          select id from sources where capture_id = any($1::uuid[])
+        ),
+        target_wikis as (
+          select unnest($2::uuid[]) as id
+        )
+        delete from knowledge_edges
+        where (from_type = 'source' and from_id in (select id from target_sources))
+           or (to_type = 'source' and to_id in (select id from target_sources))
+           or (from_type = 'wiki_page' and from_id in (select id from target_wikis))
+           or (to_type = 'wiki_page' and to_id in (select id from target_wikis))
+      `,
+      [captureIds, targetWikiIds],
+    );
     await client.query("delete from captures where id = any($1::uuid[])", [captureIds]);
 
     if (targetWikiIds.length > 0) {
@@ -360,6 +506,24 @@ async function postJson(route, payload) {
     headers,
     body: JSON.stringify(payload),
   });
+}
+
+function getNonJsonHeaders() {
+  const result = {};
+
+  if (headers.Authorization) {
+    result.Authorization = headers.Authorization;
+  }
+
+  if (headers.Cookie) {
+    result.Cookie = headers.Cookie;
+  }
+
+  return result;
+}
+
+function extractCookie(setCookieHeader) {
+  return setCookieHeader?.split(",").map((value) => value.trim()).find((value) => value.startsWith("sift_session="))?.split(";")[0] || "";
 }
 
 async function readJson(response) {

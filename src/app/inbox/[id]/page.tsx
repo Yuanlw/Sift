@@ -50,7 +50,7 @@ async function loadCapture(id: string) {
     return null;
   }
 
-  const userContext = getUserContextFromHeaders();
+  const userContext = await getUserContextFromHeaders();
   const result = await query<CaptureDetailRow>(
     `
       select
@@ -113,7 +113,7 @@ async function loadCapture(id: string) {
 export default async function CaptureDetailPage({ params }: { params: { id: string } }) {
   const locale = getLocale();
   const env = getServerEnv();
-  const userContext = getUserContextFromHeaders();
+  const userContext = await getUserContextFromHeaders();
   await recoverInterruptedProcessingJobs({
     dispatcher: env.JOB_DISPATCHER,
     limit: 3,

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createStripeCheckoutSession } from "@/lib/billing";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 export const runtime = "nodejs";
@@ -11,12 +12,18 @@ const checkoutSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     const contentType = request.headers.get("content-type") || "";
     const body = contentType.includes("application/json")
       ? await request.json()
       : Object.fromEntries((await request.formData()).entries());
     const parsed = checkoutSchema.parse(body);
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const url = await createStripeCheckoutSession({
       planCode: parsed.planCode,
       userId: userContext.userId,

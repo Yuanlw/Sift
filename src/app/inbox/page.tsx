@@ -188,7 +188,7 @@ export default async function InboxPage({ searchParams }: { searchParams?: { lim
   let loadError: string | null = null;
 
   try {
-    const userContext = getUserContextFromHeaders();
+    const userContext = await getUserContextFromHeaders();
     const env = getServerEnv();
     await recoverInterruptedProcessingJobs({
       dispatcher: env.JOB_DISPATCHER,

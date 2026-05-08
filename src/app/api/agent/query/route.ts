@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { authorizeAgentRequest } from "@/lib/agent-auth";
 import { MissingEnvError } from "@/lib/env";
 import { queryAgentContext } from "@/lib/sift-query";
-import { getUserContextFromRequest } from "@/lib/user-context";
+import { getAgentUserContextFromRequest } from "@/lib/user-context";
 
 const agentQuerySchema = z.object({
   query: z.string().trim().min(1).max(1200),
@@ -13,14 +13,14 @@ const agentQuerySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const unauthorized = authorizeAgentRequest(request);
+    const unauthorized = await authorizeAgentRequest(request);
 
     if (unauthorized) {
       return unauthorized;
     }
 
     const body = agentQuerySchema.parse(await request.json());
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getAgentUserContextFromRequest(request);
     const result = await queryAgentContext({
       userId: userContext.userId,
       query: body.query,
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       metadata: {
         context_count: result.contexts.length,
         citation_count: result.citations.length,
+        graph_expanded_count: result.contexts.filter((context) => context.scores.graph > 0).length,
         user_context_source: userContext.source,
       },
     });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
 import { query } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 interface DiscoverySourceRow {
@@ -12,11 +13,17 @@ interface DiscoverySourceRow {
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     if (!isUuid(params.id)) {
       return NextResponse.json({ error: "Invalid discovery id." }, { status: 400 });
     }
 
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const discovery = await query<DiscoverySourceRow>(
       `
         select

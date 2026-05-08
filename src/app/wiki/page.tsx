@@ -28,7 +28,7 @@ const WIKI_MAX_LIMIT = 144;
 const LOW_SIGNAL_PATTERN = "(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)";
 
 async function loadWikiPages(params: WikiListParams) {
-  const userContext = getUserContextFromHeaders();
+  const userContext = await getUserContextFromHeaders();
   const semanticWikiSlugs = await loadSemanticWikiSlugs(userContext.userId, params.q);
   const result = await query<WikiListRow>(
     `

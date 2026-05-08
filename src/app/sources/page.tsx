@@ -30,7 +30,7 @@ const SOURCE_MAX_LIMIT = 144;
 const LOW_SIGNAL_PATTERN = "(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)";
 
 async function loadSources(params: SourceListParams) {
-  const userContext = getUserContextFromHeaders();
+  const userContext = await getUserContextFromHeaders();
   const semanticSourceIds = await loadSemanticSourceIds(userContext.userId, params.q);
   const result = await query<SourceListRow>(
     `

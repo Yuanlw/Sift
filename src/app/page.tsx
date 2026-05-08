@@ -107,7 +107,7 @@ async function loadGlobalAskHistories(userId: string) {
 
 export default async function HomePage() {
   const locale = getLocale();
-  const userContext = getUserContextFromHeaders();
+  const userContext = await getUserContextFromHeaders();
   const stats = await loadHomeStats(userContext.userId);
   const todayReview = await loadTodayReview(userContext.userId);
   const askHistories = await loadGlobalAskHistories(userContext.userId);

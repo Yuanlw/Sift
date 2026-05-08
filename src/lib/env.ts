@@ -22,12 +22,22 @@ const serverEnvSchema = z.object({
   MODEL_VISION_MODEL: z.string().min(1).optional(),
   JOB_DISPATCHER: z.enum(["none", "inngest", "inline"]).default("inline"),
   SIFT_SINGLE_USER_ID: z.string().uuid().default("00000000-0000-0000-0000-000000000001"),
+  SIFT_REQUIRE_AUTH: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   SIFT_TRUST_USER_HEADER: z
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
   SIFT_USER_ID_HEADER: z.string().min(1).default("x-sift-user-id"),
   SIFT_AGENT_API_KEY: z.string().min(1).optional(),
+  SIFT_AGENT_USER_ID: z.string().uuid().optional(),
+  SIFT_ALLOW_PUBLIC_SIGNUP: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  SIFT_SESSION_SECRET: z.string().min(32).optional(),
   SIFT_APP_URL: z.string().url().default("http://localhost:3000"),
   SIFT_MODEL_KEY_ENCRYPTION_SECRET: z.string().min(32).optional(),
   SIFT_PRICE_LABEL_PERSONAL: z.string().min(1).optional(),
@@ -51,6 +61,8 @@ const optionalEnvKeys = [
   "MODEL_VISION_API_KEY",
   "MODEL_VISION_MODEL",
   "SIFT_AGENT_API_KEY",
+  "SIFT_AGENT_USER_ID",
+  "SIFT_SESSION_SECRET",
   "SIFT_MODEL_KEY_ENCRYPTION_SECRET",
   "SIFT_PRICE_LABEL_PERSONAL",
   "SIFT_PRICE_LABEL_PRO",
@@ -89,9 +101,13 @@ export function getServerEnv() {
     MODEL_VISION_MODEL: process.env.MODEL_VISION_MODEL,
     JOB_DISPATCHER: process.env.JOB_DISPATCHER,
     SIFT_SINGLE_USER_ID: process.env.SIFT_SINGLE_USER_ID,
+    SIFT_REQUIRE_AUTH: process.env.SIFT_REQUIRE_AUTH,
     SIFT_TRUST_USER_HEADER: process.env.SIFT_TRUST_USER_HEADER,
     SIFT_USER_ID_HEADER: process.env.SIFT_USER_ID_HEADER,
     SIFT_AGENT_API_KEY: process.env.SIFT_AGENT_API_KEY,
+    SIFT_AGENT_USER_ID: process.env.SIFT_AGENT_USER_ID,
+    SIFT_ALLOW_PUBLIC_SIGNUP: process.env.SIFT_ALLOW_PUBLIC_SIGNUP,
+    SIFT_SESSION_SECRET: process.env.SIFT_SESSION_SECRET,
     SIFT_APP_URL: process.env.SIFT_APP_URL,
     SIFT_MODEL_KEY_ENCRYPTION_SECRET: process.env.SIFT_MODEL_KEY_ENCRYPTION_SECRET,
     SIFT_PRICE_LABEL_PERSONAL: process.env.SIFT_PRICE_LABEL_PERSONAL,

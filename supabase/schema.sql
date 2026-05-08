@@ -7,6 +7,37 @@ create type job_type as enum ('process_capture');
 create type job_status as enum ('queued', 'running', 'completed', 'failed');
 create type wiki_page_status as enum ('draft', 'published', 'archived');
 
+create table users (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  display_name text,
+  password_hash text not null,
+  last_login_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint users_email_normalized check (email = lower(trim(email))),
+  unique (email)
+);
+
+create table user_sessions (
+  id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  token_hash text not null unique,
+  user_agent text,
+  ip_address text,
+  expires_at timestamptz not null,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table auth_rate_limits (
+  key text primary key,
+  scope text not null,
+  attempts integer not null default 0,
+  locked_until timestamptz,
+  updated_at timestamptz not null default now()
+);
+
 create table captures (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
@@ -159,6 +190,39 @@ create table knowledge_recommendations (
   unique (user_id, dedupe_key)
 );
 
+create table knowledge_edges (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  from_type text not null check (from_type in ('source', 'wiki_page')),
+  from_id uuid not null,
+  to_type text not null check (to_type in ('source', 'wiki_page')),
+  to_id uuid not null,
+  edge_type text not null check (edge_type in ('source_wiki', 'related_wiki', 'duplicate_source', 'supports', 'contradicts')),
+  weight real not null default 0,
+  confidence real,
+  evidence jsonb not null default '{}'::jsonb,
+  dedupe_key text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, dedupe_key)
+);
+
+create table wiki_merge_histories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  target_wiki_page_id uuid not null references wiki_pages(id) on delete cascade,
+  merged_wiki_page_id uuid references wiki_pages(id) on delete set null,
+  discovery_id uuid references knowledge_discoveries(id) on delete set null,
+  before_title text not null,
+  before_content_markdown text not null,
+  after_title text not null,
+  after_content_markdown text not null,
+  merged_source_ids jsonb not null default '[]'::jsonb,
+  summary text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create table model_call_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
@@ -234,6 +298,10 @@ create table smart_quota_ledger (
 );
 
 create index captures_user_created_idx on captures (user_id, created_at desc);
+create index users_email_idx on users (email);
+create index user_sessions_user_created_idx on user_sessions (user_id, created_at desc);
+create index user_sessions_expires_idx on user_sessions (expires_at);
+create index auth_rate_limits_locked_until_idx on auth_rate_limits (locked_until);
 create index processing_jobs_capture_idx on processing_jobs (capture_id);
 create index extracted_contents_capture_idx on extracted_contents (capture_id, created_at desc);
 create index sources_user_created_idx on sources (user_id, created_at desc);
@@ -251,6 +319,10 @@ create index knowledge_discoveries_user_created_idx on knowledge_discoveries (us
 create index knowledge_discoveries_source_idx on knowledge_discoveries (source_id, created_at desc);
 create index knowledge_recommendations_user_rank_idx on knowledge_recommendations (user_id, status, updated_at desc, score desc);
 create index knowledge_recommendations_source_idx on knowledge_recommendations (source_id, updated_at desc);
+create index knowledge_edges_from_idx on knowledge_edges (user_id, from_type, from_id, weight desc);
+create index knowledge_edges_to_idx on knowledge_edges (user_id, to_type, to_id, weight desc);
+create index knowledge_edges_type_idx on knowledge_edges (user_id, edge_type, updated_at desc);
+create index wiki_merge_histories_target_created_idx on wiki_merge_histories (user_id, target_wiki_page_id, created_at desc);
 create index model_call_logs_user_created_idx on model_call_logs (user_id, created_at desc);
 create index model_call_logs_user_purpose_idx on model_call_logs (user_id, stage, role, purpose, created_at desc);
 create index smart_quota_ledger_user_period_idx on smart_quota_ledger (user_id, period_start, period_end, created_at desc);

@@ -42,17 +42,33 @@ cp .env.example .env.local
 - `INNGEST_EVENT_KEY`
 - `INNGEST_SIGNING_KEY`
 - `SIFT_SINGLE_USER_ID`
+- `SIFT_REQUIRE_AUTH`
+- `SIFT_SESSION_SECRET`
 - `SIFT_TRUST_USER_HEADER`
 - `SIFT_USER_ID_HEADER`
 - `SIFT_AGENT_API_KEY`
 
-Phase 0 使用 hardcoded 单用户，`SIFT_SINGLE_USER_ID` 可以先保留默认值。
+本地账号体系默认开启，`SIFT_REQUIRE_AUTH=true` 时核心页面和用户 API 需要登录。首次打开 `/signup` 创建第一个账号时，Sift 会把原来的 `SIFT_SINGLE_USER_ID` 默认用户数据认领到这个新账号下。
 
-`SIFT_AGENT_API_KEY` 是可选项。留空时本地 Agent API 不强制认证；填写后，`/api/agent/*` 和 `/api/mcp` 请求需要携带 Bearer Token。
+登录后可以在 `/settings` 更新显示名称、修改密码或退出登录。修改密码会保留当前会话，并让其他已登录会话失效。
+
+登录接口带基础防暴力破解：同一邮箱或同一来源 IP 在 15 分钟内连续失败 5 次，会锁定 15 分钟；正常登录成功后会清理失败记录。
+
+浏览器登录态的写接口带同源校验：当请求带有跨站 `Origin`，或没有 `Origin` 但 `Referer` 跨站时，会被拒绝。这个校验覆盖保存、导入、补充、重试、忽略、问答、发现合并、归档/删除、模型设置和账单入口。Agent/MCP、Inngest、Stripe Webhook 和维护任务属于外部集成入口，使用各自的认证方式。
+
+`SIFT_SINGLE_USER_ID` 仍用于兼容旧数据、受信 Header 和不启用登录的本地模式。新部署可以保留默认值；已有部署不要随意改这个 UUID。
+
+`SIFT_SESSION_SECRET` 用于签名登录 Cookie。本地开发可以使用模板里的值；生产环境必须替换成至少 32 个字符的随机密钥。
+
+`SIFT_ALLOW_PUBLIC_SIGNUP=false` 时只允许创建第一个账号。已有账号后再次访问 `/signup` 会显示公开注册已关闭；如需临时开放注册，显式改成 `true`。
+
+`SIFT_AGENT_API_KEY` 是可选项。`SIFT_REQUIRE_AUTH=true` 时，Agent API / MCP 必须携带登录 session 或正确的 Bearer Token；`SIFT_REQUIRE_AUTH=false` 时才允许本地匿名调试。只有一个真实账号时，Agent API / MCP 会自动使用这个账号的数据；多账号部署使用 Agent Key 时必须配置 `SIFT_AGENT_USER_ID`，否则会拒绝请求，避免误读默认空用户。
 
 `MODEL_VISION_*` 是图片 OCR 使用的 OpenAI-compatible 视觉模型配置。留空时会复用文本模型配置；如果文本模型不支持图片输入，图片会保存原始附件并降级为 fallback。上传文件会保存在私有 `.data/uploads/captures` 目录，通过授权 API 读取；当前只支持图片文件，单张 10MB，一次最多 6 张。
 
-`SIFT_TRUST_USER_HEADER=false` 时保持单用户模式。只有在反向代理或网关已经完成认证时，才建议改成 `true`，此时 Sift 会从 `SIFT_USER_ID_HEADER` 指定的请求头读取用户 UUID。
+`SIFT_REQUIRE_AUTH=false` 时会回到本地默认用户模式，适合一次性调试，不建议公开部署使用。
+
+`SIFT_TRUST_USER_HEADER=false` 时使用 Sift 自己的登录 session。只有在反向代理或网关已经完成认证时，才建议改成 `true`，此时 Sift 会从 `SIFT_USER_ID_HEADER` 指定的请求头读取用户 UUID。
 
 配置文件用途：
 
@@ -191,17 +207,43 @@ Agent API / MCP smoke check：
 npm run smoke:agent
 ```
 
+默认 smoke 账号是 `local@sift.dev` / `SiftLocal123!`，可用 `SIFT_SMOKE_EMAIL`、`SIFT_SMOKE_PASSWORD` 覆盖。
+
+注意：为了保护首次账号认领旧数据的路径，smoke 脚本不会在零账号数据库里直接插入用户；零账号时会走 `/api/auth/signup`。数据库已有账号时，脚本才会按需 provision 默认 smoke 用户，并清理对应登录限流记录。
+
+如果需要检查非默认端口：
+
+```bash
+SIFT_BASE_URL=http://127.0.0.1:3001 npm run smoke:agent
+```
+
+## 处理兜底
+
+Sift 会通过 Inngest 注册一个每日恢复任务，默认按 UTC `19:00` 执行，也就是北京时间凌晨 `03:00`。它会低频扫描处理链路里的未完成、失败或降级步骤：
+
+- 卡在 `queued` / `running` 的任务，或抓取、提取、结构化、生成 Source/Wiki、切分片段等关键步骤失败的资料，会重新跑完整处理。
+- 已经生成 Source/Wiki/Chunks、但 embedding 缺失的资料，只补写缺失 chunk 的向量，不重写知识页。
+- 发现关系和推荐这类后置增强步骤失败时，会单独补跑。
+
+本地开发时也可以手动触发一次：
+
+```bash
+curl -X POST http://localhost:3000/api/maintenance/recover-processing
+```
+
+生产环境建议配置 `SIFT_AGENT_API_KEY`，然后携带 `Authorization: Bearer <key>` 触发该维护接口。
+
 ## Phase 0 当前链路
 
 1. 用户在 `/inbox` 提交链接、文本或图片。
 2. `/api/captures` 创建 Capture 和 ProcessingJob。
 3. API 按 `JOB_DISPATCHER` 配置派发后台处理。
 4. 后台调用 `processCapture`。
-5. 任务提取文本，生成 Source、draft WikiPage、chunks 和 embeddings。
+5. 任务提取文本，生成 Source、draft WikiPage、chunks、embeddings 和隐形关系边。
 
 ## 当前限制
 
 - 图片可以上传并保存原始附件，OCR 依赖 `MODEL_VISION_*` 指向的视觉模型能力；PDF 和音频暂未开放上传处理。
-- 还没有正式账号系统；当前多用户模式依赖受信任网关传入用户 UUID 请求头。
+- 已有本地邮箱密码账号和 HttpOnly session；当前还没有邮箱验证、找回密码、团队空间、邀请成员和第三方登录。
 - 知识库级问答已有基础版本，但还没有完整的权限、审计和评测体系。
 - 模型层当前先支持 OpenAI-compatible provider，后续再增加 OpenAI、Anthropic、Google Gemini、阿里 Qwen、DeepSeek、豆包、智谱 AI、Kimi 等专用 adapter。

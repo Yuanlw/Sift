@@ -9,6 +9,8 @@ export type WikiPageStatus = "draft" | "published" | "archived";
 export type AuditStatus = "success" | "failure" | "denied";
 export type KnowledgeDiscoveryStatus = "new" | "seen" | "ignored";
 export type KnowledgeDiscoveryType = "new_source" | "related_wiki" | "duplicate_source" | "suggested_question";
+export type KnowledgeEdgeNodeType = "source" | "wiki_page";
+export type KnowledgeEdgeType = "source_wiki" | "related_wiki" | "duplicate_source" | "supports" | "contradicts";
 export type KnowledgeRecommendationStatus = "active" | "dismissed";
 export type ModelCallRole = "text" | "embedding" | "vision";
 export type ModelCallStage = "processing" | "ask" | "retrieval" | "management" | "agent";
@@ -21,6 +23,35 @@ export interface RawAttachment {
   mime_type?: string | null;
   size_bytes?: number | null;
   storage?: "local" | "remote" | null;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  display_name: string | null;
+  password_hash: string;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserSession {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface AuthRateLimit {
+  key: string;
+  scope: string;
+  attempts: number;
+  locked_until: string | null;
+  updated_at: string;
 }
 
 export interface Capture {
@@ -146,6 +177,38 @@ export interface KnowledgeRecommendation {
   updated_at: string;
 }
 
+export interface KnowledgeEdge {
+  id: string;
+  user_id: string;
+  from_type: KnowledgeEdgeNodeType;
+  from_id: string;
+  to_type: KnowledgeEdgeNodeType;
+  to_id: string;
+  edge_type: KnowledgeEdgeType;
+  weight: number;
+  confidence: number | null;
+  evidence: Json;
+  dedupe_key: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WikiMergeHistory {
+  id: string;
+  user_id: string;
+  target_wiki_page_id: string;
+  merged_wiki_page_id: string | null;
+  discovery_id: string | null;
+  before_title: string;
+  before_content_markdown: string;
+  after_title: string;
+  after_content_markdown: string;
+  merged_source_ids: Json;
+  summary: string | null;
+  metadata: Json;
+  created_at: string;
+}
+
 export interface ModelCallLog {
   id: string;
   user_id: string;
@@ -173,6 +236,61 @@ export interface ModelCallLog {
 export interface Database {
   public: {
     Tables: {
+      users: {
+        Row: {
+          id: string;
+          email: string;
+          display_name: string | null;
+          password_hash: string;
+          last_login_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          display_name?: string | null;
+          password_hash: string;
+          last_login_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["users"]["Insert"]>;
+      };
+      user_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          token_hash: string;
+          user_agent: string | null;
+          ip_address: string | null;
+          expires_at: string;
+          revoked_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          user_id: string;
+          token_hash: string;
+          user_agent?: string | null;
+          ip_address?: string | null;
+          expires_at: string;
+          revoked_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["user_sessions"]["Insert"]>;
+      };
+      auth_rate_limits: {
+        Row: AuthRateLimit;
+        Insert: {
+          key: string;
+          scope: string;
+          attempts?: number;
+          locked_until?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["auth_rate_limits"]["Insert"]>;
+      };
       captures: {
         Row: {
           id: string;
@@ -467,6 +585,58 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["knowledge_recommendations"]["Insert"]>;
+      };
+      wiki_merge_histories: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_wiki_page_id: string;
+          merged_wiki_page_id: string | null;
+          discovery_id: string | null;
+          before_title: string;
+          before_content_markdown: string;
+          after_title: string;
+          after_content_markdown: string;
+          merged_source_ids: Json;
+          summary: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_wiki_page_id: string;
+          merged_wiki_page_id?: string | null;
+          discovery_id?: string | null;
+          before_title: string;
+          before_content_markdown: string;
+          after_title: string;
+          after_content_markdown: string;
+          merged_source_ids?: Json;
+          summary?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["wiki_merge_histories"]["Insert"]>;
+      };
+      knowledge_edges: {
+        Row: KnowledgeEdge;
+        Insert: {
+          id?: string;
+          user_id: string;
+          from_type: KnowledgeEdgeNodeType;
+          from_id: string;
+          to_type: KnowledgeEdgeNodeType;
+          to_id: string;
+          edge_type: KnowledgeEdgeType;
+          weight?: number;
+          confidence?: number | null;
+          evidence?: Json;
+          dedupe_key: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["knowledge_edges"]["Insert"]>;
       };
       model_call_logs: {
         Row: {

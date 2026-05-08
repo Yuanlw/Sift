@@ -3,6 +3,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { query, transaction } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
 import { deleteArchivedSources } from "@/lib/permanent-delete";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 interface SourceBulkRow {
@@ -15,7 +16,13 @@ type BulkSourceAction = "archive" | "restore" | "delete";
 
 export async function POST(request: Request) {
   try {
-    const userContext = getUserContextFromRequest(request);
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
+    const userContext = await getUserContextFromRequest(request);
     const parsed = await parseBody(request);
 
     if (!parsed) {

@@ -65,12 +65,16 @@ interface PurposeAggregate extends UsageAggregate {
   purpose: string;
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams?: { account?: string; accountError?: string; accountScope?: string; revokedSessions?: string };
+}) {
   noStore();
 
   const locale = getLocale();
   const env = getServerEnv();
-  const userContext = getUserContextFromHeaders();
+  const userContext = await getUserContextFromHeaders();
   const billingPlans = getBillingPlans();
   const stripeConfigured = isStripeBillingConfigured();
 
@@ -153,6 +157,7 @@ export default async function SettingsPage() {
 
   const totals = sumUsage(stageRoleUsage);
   const exposeModelDetails = modelSettings.mode === "custom";
+  const accountNotice = getAccountNotice(searchParams, locale);
 
   return (
     <div className="settings-page">
@@ -189,20 +194,21 @@ export default async function SettingsPage() {
         <div className="settings-section-heading">
           <div>
             <h2 id="account-heading">{localeText(locale, "个人、账号与部署", "Profile, Account, and Deployment")}</h2>
-            <p>{localeText(locale, "当前版本先展示身份来源和部署模式；更完整的昵称、邮箱、团队和套餐信息会在账号体系成熟后接入。", "This version shows identity source and deployment mode first; richer profile, email, team, and plan details can be added once the account system matures.")}</p>
+            <p>{localeText(locale, "当前版本先接入本地邮箱密码账号；团队、邀请、找回密码和第三方登录会在后续账号阶段继续补齐。", "This version starts with local email/password accounts; teams, invites, password reset, and third-party login can be added in later account phases.")}</p>
           </div>
         </div>
+        {accountNotice ? (
+          <p className={`settings-message ${accountNotice.tone === "error" ? "settings-message-error" : "settings-message-success"}`}>
+            {accountNotice.message}
+          </p>
+        ) : null}
         <div className="account-profile-card">
           <div className="account-avatar" aria-hidden="true">S</div>
           <div>
             <span>{localeText(locale, "个人工作区", "Personal workspace")}</span>
-            <strong>{localeText(locale, "本地用户", "Local user")}</strong>
+            <strong>{userContext.displayName || userContext.email || localeText(locale, "本地用户", "Local user")}</strong>
             <p>
-              {localeText(
-                locale,
-                "现在先以稳定的单用户身份运行；后续接入登录、邮箱、团队和账单主体时，这里会自然升级为完整账号中心。",
-                "Sift currently runs with a stable single-user identity; when login, email, teams, and billing profiles arrive, this becomes the full account center.",
-              )}
+              {userContext.email || localeText(locale, "当前仍使用本地默认用户；创建账号后会绑定到真实邮箱身份。", "Sift is still using the local default user; create an account to bind data to a real email identity.")}
             </p>
           </div>
           <div className="account-profile-meta">
@@ -211,7 +217,8 @@ export default async function SettingsPage() {
           </div>
         </div>
         <div className="settings-kv-grid">
-          <KeyValue label={localeText(locale, "账号状态", "Account status")} value={localeText(locale, "本地可用", "Local ready")} tone="ok" />
+          <KeyValue label={localeText(locale, "账号状态", "Account status")} value={userContext.source === "session" ? localeText(locale, "已登录", "Signed in") : localeText(locale, "本地可用", "Local ready")} tone="ok" />
+          <KeyValue label={localeText(locale, "邮箱", "Email")} value={userContext.email || localeText(locale, "未绑定", "Not bound")} />
           <KeyValue label={localeText(locale, "当前用户", "Current User")} value={shortUserId(userContext.userId)} />
           <KeyValue label={localeText(locale, "身份来源", "Identity Source")} value={getUserSourceLabel(userContext.source, locale)} />
           <KeyValue
@@ -226,6 +233,54 @@ export default async function SettingsPage() {
             tone={env.SIFT_AGENT_API_KEY ? "ok" : "warning"}
           />
         </div>
+        {userContext.source === "session" ? (
+          <>
+            <div className="account-management-grid">
+              <form action="/api/account/profile" className="account-management-form" method="post">
+                <div>
+                  <h3>{localeText(locale, "个人资料", "Profile")}</h3>
+                  <p>{localeText(locale, "用于导航和设置页展示，不影响邮箱登录。", "Used in navigation and settings; it does not change your login email.")}</p>
+                </div>
+                <label>
+                  {localeText(locale, "显示名称", "Display name")}
+                  <input
+                    autoComplete="name"
+                    defaultValue={userContext.displayName || ""}
+                    maxLength={80}
+                    name="displayName"
+                    placeholder={localeText(locale, "例如：老袁", "For example: Yuan")}
+                    type="text"
+                  />
+                </label>
+                <button className="button" type="submit">{localeText(locale, "保存资料", "Save profile")}</button>
+              </form>
+
+              <form action="/api/account/password" className="account-management-form" method="post">
+                <div>
+                  <h3>{localeText(locale, "修改密码", "Change password")}</h3>
+                  <p>{localeText(locale, "修改后会保留当前登录，并让其他已登录设备失效。", "After changing it, Sift keeps this session and signs out other devices.")}</p>
+                </div>
+                <label>
+                  {localeText(locale, "当前密码", "Current password")}
+                  <input autoComplete="current-password" name="currentPassword" required type="password" />
+                </label>
+                <label>
+                  {localeText(locale, "新密码", "New password")}
+                  <input autoComplete="new-password" minLength={8} name="newPassword" required type="password" />
+                </label>
+                <label>
+                  {localeText(locale, "确认新密码", "Confirm new password")}
+                  <input autoComplete="new-password" minLength={8} name="newPasswordConfirm" required type="password" />
+                </label>
+                <button className="button" type="submit">{localeText(locale, "更新密码", "Update password")}</button>
+              </form>
+            </div>
+
+            <form action="/api/auth/logout" className="settings-inline-form" method="post">
+              <button className="button button-secondary" type="submit">{localeText(locale, "退出登录", "Log out")}</button>
+            </form>
+          </>
+        ) : null}
       </section>
 
       <section className="settings-section" id="models" aria-labelledby="models-heading">
@@ -762,9 +817,49 @@ function shortUserId(value: string) {
   return value.length > 13 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
 }
 
-function getUserSourceLabel(source: "default" | "trusted_header", locale: Locale) {
+function getAccountNotice(
+  searchParams: { account?: string; accountError?: string; revokedSessions?: string } | undefined,
+  locale: Locale,
+) {
+  if (searchParams?.accountError) {
+    return {
+      message: searchParams.accountError,
+      tone: "error" as const,
+    };
+  }
+
+  if (searchParams?.account === "profile-updated") {
+    return {
+      message: localeText(locale, "个人资料已保存。", "Profile saved."),
+      tone: "success" as const,
+    };
+  }
+
+  if (searchParams?.account === "password-updated") {
+    const revokedSessions = toNumber(searchParams.revokedSessions);
+    return {
+      message:
+        revokedSessions > 0
+          ? localeText(locale, `密码已更新，已让 ${revokedSessions} 个其他会话失效。`, `Password updated. ${revokedSessions} other sessions were signed out.`)
+          : localeText(locale, "密码已更新。", "Password updated."),
+      tone: "success" as const,
+    };
+  }
+
+  return null;
+}
+
+function getUserSourceLabel(source: "agent_api_key" | "default" | "session" | "trusted_header", locale: Locale) {
+  if (source === "session") {
+    return localeText(locale, "登录会话", "Signed-in session");
+  }
+
   if (source === "trusted_header") {
     return localeText(locale, "受信请求头", "Trusted header");
+  }
+
+  if (source === "agent_api_key") {
+    return localeText(locale, "Agent API Key", "Agent API key");
   }
 
   return localeText(locale, "默认单用户", "Default single user");

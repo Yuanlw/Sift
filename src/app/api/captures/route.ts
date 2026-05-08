@@ -3,6 +3,7 @@ import { z } from "zod";
 import { writeAuditLog } from "@/lib/audit";
 import { CaptureValidationError, createCapture } from "@/lib/captures/create-capture";
 import { getServerEnv, MissingEnvError } from "@/lib/env";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { saveCaptureUploads, UploadValidationError } from "@/lib/upload-storage";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
@@ -36,10 +37,16 @@ const createCaptureSchema = z
 
 export async function POST(request: Request) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     const parsedRequest = await parseCaptureRequest(request);
     const body = createCaptureSchema.parse(parsedRequest.payload);
     const env = getServerEnv();
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const result = await createCapture({
       url: body.url,
       text: body.text,

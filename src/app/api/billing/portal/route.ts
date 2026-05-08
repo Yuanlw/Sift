@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { createStripeBillingPortalSession } from "@/lib/billing";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const userContext = getUserContextFromRequest(request);
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
+    const userContext = await getUserContextFromRequest(request);
     const url = await createStripeBillingPortalSession({
       userId: userContext.userId,
     });

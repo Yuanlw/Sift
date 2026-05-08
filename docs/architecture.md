@@ -137,6 +137,12 @@ Prototype 阶段 UI 可以用轮询显示处理状态，但后台仍应按任务
 
 每一步都应该可以失败、记录错误、重试。链接抓取失败不应影响原始链接保存；OCR 失败不应影响原始图片保存；embedding 慢不应影响 Source 和 Wiki 先出现。
 
+处理链路需要一个低频兜底恢复机制。每日任务会扫描 `processing_jobs.step_status`、`captures.status` 和缺失 embedding 的 chunks：
+
+- 对卡住、失败或关键步骤降级的 capture，重新触发完整处理。
+- 对 Source/Wiki/Chunks 已存在但 embedding 为空的 capture，只补写缺失向量，避免重写知识页。
+- 对知识发现和推荐等后置增强步骤，单独补跑对应增强逻辑。
+
 ## Extraction Pipeline
 
 负责把原始内容变成可处理文本。
@@ -177,15 +183,17 @@ Prototype 阶段 UI 可以用轮询显示处理状态，但后台仍应按任务
 - `Source`：清理后的单份来源资料
 - `WikiPage`：长期沉淀的主题知识页
 - `Chunk`：用于搜索和问答的文本片段
+- `KnowledgeEdge`：Source / WikiPage 之间的隐形关系边，用于关系扩展、推荐和后续洞察
 - `ProcessingJob`：处理任务状态
 
 暂时不做：
 
 - `Claim`
-- `GraphEdge`
-- 复杂知识图谱
+- 复杂可视化知识图谱
 
-这些可以等使用模式稳定后再加。
+Sift 的关系层优先服务检索和内容复用，不优先做节点图 UI。第一版只记录强证据关系，例如 Source-Wiki 归属、相似 Wiki、重复 Source；后续再扩展支持、冲突、实体提及等更细关系。
+
+P10 暂不引入独立图数据库。当前关系查询只需要一跳扩展、权限过滤和引用回溯，用 Postgres 的 `knowledge_edges` 更简单，也能复用现有事务、备份和用户边界；只有当关系规模、路径查询或图算法成为核心瓶颈时，再评估 Neo4j / Kuzu 等图数据库并放入 Docker 部署。
 
 ## Embeddings
 
@@ -207,7 +215,36 @@ Prototype：
 - Capture 列表
 - Source 详情
 - WikiPage 详情
+
+检索链路采用混合召回：
+
+```text
+query
+-> infer retrieval intent
+-> keyword / embedding seed chunks
+-> KnowledgeEdge graph expansion, 1-hop by default and 2-hop only for relation/evidence/comparison intent
+-> graph-aware rerank
+-> citations
+```
+
+关系扩展必须保留来源引用和关系路径，避免把关系层变成幻觉放大器。普通问题默认只做一跳；当用户明确在问“相关资料、证据来源、对比、重复内容”时，可以启用带降权的二跳扩展。
 - 基础标题和正文搜索
+- 局部关系展示：Source / Wiki 详情页可以展示当前节点附近的一跳关系，帮助用户理解“为什么相关”和“下一条该看什么”。这类展示服务检索和阅读，不替代 Wiki 正文，也不要求用户手工整理图谱。
+
+知识融合链路采用人工确认的合并动作：
+
+```text
+KnowledgeDiscovery
+-> merge preview
+-> user confirms or edits
+-> update target WikiPage
+-> link incoming Source to target WikiPage
+-> archive incoming temporary WikiPage
+-> record WikiMergeHistory
+-> rebuild target Wiki chunks / embeddings
+```
+
+P12 的合并不是自动覆盖。AI 负责生成融合草稿，用户负责确认，系统负责保留来源、关系边和合并前快照。
 
 Validated MVP：
 

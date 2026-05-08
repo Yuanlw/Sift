@@ -3,15 +3,22 @@ import { writeAuditLog } from "@/lib/audit";
 import { query } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
 import { processCaptureById } from "@/lib/processing/process-capture";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     if (!isUuid(params.id)) {
       return NextResponse.json({ error: "Invalid capture id." }, { status: 400 });
     }
 
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const capture = await query<{ id: string }>(
       "select id from captures where id = $1 and user_id = $2 limit 1",
       [params.id, userContext.userId],

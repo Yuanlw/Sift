@@ -109,6 +109,94 @@ Source <-> WikiPage
 - `confidence`
 - `created_at`
 
+`source_wiki_pages` 是最直接的归属关系：哪份 Source 支撑哪篇 WikiPage。
+
+## KnowledgeEdge
+
+`KnowledgeEdge` 是 Source / WikiPage 之间的隐形知识关系边，用于检索扩展、推荐、发现和合并候选。
+
+它不要求用户手工维护知识图谱，也不等于全库图谱画布。第一版优先记录强证据关系：
+
+- `source_wiki`：Source 支撑 WikiPage。
+- `related_wiki`：两个 WikiPage 主题相关，可用于阅读和召回扩展。
+- `duplicate_source`：两份 Source 疑似重复。
+- `supports` / `contradicts`：预留给后续更细的证据关系。
+
+关键字段：
+
+- `id`
+- `user_id`
+- `from_type`
+- `from_id`
+- `to_type`
+- `to_id`
+- `edge_type`
+- `weight`
+- `confidence`
+- `evidence`
+- `dedupe_key`
+- `created_at`
+- `updated_at`
+
+所有读写都必须带 `user_id` 过滤。关系层当前由 Postgres 承载，不引入独立图数据库。
+
+## KnowledgeDiscovery
+
+`KnowledgeDiscovery` 是系统生成的待处理发现。
+
+它记录“这条新资料可能更新某篇 WikiPage”“这条资料可能和旧资料重复”等可解释线索。发现不是事实来源本身，事实仍来自 Source、WikiPage 和 Chunk。
+
+关键字段：
+
+- `id`
+- `user_id`
+- `discovery_type`
+- `title`
+- `body`
+- `source_id`
+- `wiki_page_id`
+- `related_source_id`
+- `related_wiki_page_id`
+- `suggested_question`
+- `status`
+- `metadata`
+- `dedupe_key`
+- `created_at`
+- `updated_at`
+
+发现列表查询必须按 `kd.user_id` 收口，并且关联 Source / WikiPage 时也要同时匹配同一 `user_id`，避免异常跨用户引用暴露标题或 slug。
+
+## WikiMergeHistory
+
+`WikiMergeHistory` 记录用户确认的一键合并。
+
+合并不是自动覆盖。系统先生成合并预览，用户确认或修改后才更新目标 WikiPage。
+
+关键字段：
+
+- `id`
+- `user_id`
+- `target_wiki_page_id`
+- `merged_wiki_page_id`
+- `discovery_id`
+- `before_title`
+- `before_content_markdown`
+- `after_title`
+- `after_content_markdown`
+- `merged_source_ids`
+- `summary`
+- `metadata`
+- `created_at`
+
+当前合并策略：
+
+- 更新目标 WikiPage。
+- 将被并入的临时 WikiPage 归档。
+- 将新 Source 关联到目标 WikiPage。
+- 同步维护 `source_wiki_pages` 和 `knowledge_edges`。
+- 重建目标 Wiki 的 chunks；embedding 失败时保留纯文本 chunks。
+- 回滚第一版先保留数据基础，后续再做可视化恢复入口。
+
 ## Prototype 阶段的降级规则
 
 Prototype 阶段不做复杂合并。
@@ -129,7 +217,7 @@ AI 可以建议相关主题，但不自动大规模修改旧 WikiPage。
 2. 检索相似 WikiPage。
 3. AI 判断应该新建还是更新。
 4. 给出合并建议。
-5. 在高置信度场景自动更新，低置信度场景等待用户确认。
+5. 在高置信度场景给出合并预览，等待用户确认或编辑后再更新。
 
 ## Chunk
 
@@ -209,11 +297,10 @@ Prototype 阶段先记录：
 以下模型暂时不进入 MVP：
 
 - `Claim`
-- `GraphEdge`
 - `Topic`
 - `Collection`
 
-原因：这些模型有长期价值，但会让 MVP 过早进入知识图谱复杂度。第一版应该先验证“内容进来，知识出去”的闭环。
+原因：这些模型有长期价值，但会让 MVP 过早进入知识治理复杂度。第一版关系层只保留轻量 `KnowledgeEdge`，服务召回、推荐和可控合并。
 
 ## 数据库选择
 

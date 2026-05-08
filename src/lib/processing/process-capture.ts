@@ -2,6 +2,7 @@ import { chunkText, roughTokenCount } from "@/lib/chunk";
 import { query } from "@/lib/db";
 import { type ExtractedCaptureContent, extractCaptureText } from "@/lib/extraction";
 import { createKnowledgeDiscoveriesForProcessedCapture } from "@/lib/knowledge-discoveries";
+import { createKnowledgeEdgesForProcessedCapture } from "@/lib/knowledge-edges";
 import { refreshKnowledgeRecommendationsForProcessedCapture } from "@/lib/knowledge-recommendations";
 import { embedTexts, generateKnowledgeDraft, type KnowledgeDraft } from "@/lib/models";
 import { SmartQuotaExceededError } from "@/lib/smart-quota";
@@ -35,11 +36,24 @@ export async function processCaptureById(captureId: string) {
 
   try {
     currentStep = capture.raw_url ? "fetch_link" : "extracting";
-    const extracted = await runJobStep(job.id, currentStep, async () => {
-      const result = await extractCaptureText(capture);
-      await saveExtractedContent(capture, result);
-      return result;
-    });
+    await markJobStep(job.id, currentStep, "running");
+    const extracted = await extractCaptureText(capture);
+    await saveExtractedContent(capture, extracted);
+
+    if (extracted.status === "fallback") {
+      const message = getFallbackProcessingMessage(extracted);
+      await deleteFallbackArtifactsForCapture(capture);
+      await markJobStep(job.id, currentStep, "failed", message);
+      await markJobFailed(job.id, capture.id, currentStep, message);
+
+      return {
+        captureId: capture.id,
+        sourceId: null,
+        wikiPageId: null,
+      };
+    }
+
+    await markJobStep(job.id, currentStep, "completed");
 
     currentStep = "structuring";
     await markJobStep(job.id, currentStep, "running");
@@ -130,6 +144,20 @@ export async function processCaptureById(captureId: string) {
     currentStep = "create_chunks";
     await runJobStep(job.id, currentStep, () => createChunks(capture, source, wikiPage, chunkInputs, embeddings));
 
+    currentStep = "create_knowledge_edges";
+    try {
+      await runJobStep(job.id, currentStep, () =>
+        createKnowledgeEdgesForProcessedCapture({
+          userId: capture.user_id,
+          source,
+          wikiPage,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown knowledge edge error";
+      await markJobStep(job.id, currentStep, "skipped", message);
+    }
+
     currentStep = "create_discoveries";
     try {
       await runJobStep(job.id, currentStep, () =>
@@ -205,21 +233,7 @@ export async function processCaptureById(captureId: string) {
       };
     }
 
-    await query("update captures set status = 'failed' where id = $1", [capture.id]);
-    await query(
-      `
-        update processing_jobs
-        set
-          status = 'failed',
-          current_step = $2,
-          step_status = coalesce(step_status, '{}'::jsonb)
-            || jsonb_build_object($2::text, jsonb_build_object('status', 'failed', 'finished_at', now(), 'error', $3::text)),
-          error_message = $3,
-          finished_at = now()
-        where id = $1
-      `,
-      [job.id, currentStep, message],
-    );
+    await markJobFailed(job.id, capture.id, currentStep, message);
     throw error;
   }
 }
@@ -388,14 +402,105 @@ async function markJobStep(jobId: string, step: string, status: "running" | "com
         step_status = coalesce(step_status, '{}'::jsonb)
           || jsonb_build_object(
             $2::text,
-            coalesce(step_status -> $2::text, '{}'::jsonb)
-              || jsonb_build_object('status', $3::text, '${timestampField}', now())
-              || case when $4::text is null then '{}'::jsonb else jsonb_build_object('error', $4::text) end
+            case
+              when $4::text is null then
+                (
+                  coalesce(step_status -> $2::text, '{}'::jsonb)
+                  || jsonb_build_object('status', $3::text, '${timestampField}', now())
+                ) - 'error'
+              else
+                coalesce(step_status -> $2::text, '{}'::jsonb)
+                || jsonb_build_object('status', $3::text, '${timestampField}', now(), 'error', $4::text)
+            end
           )
       where id = $1
     `,
     [jobId, step, status, error || null],
   );
+}
+
+async function markJobFailed(jobId: string, captureId: string, step: string, message: string) {
+  await query("update captures set status = 'failed' where id = $1", [captureId]);
+  await query(
+    `
+      update processing_jobs
+      set
+        status = 'failed',
+        current_step = $2,
+        step_status = coalesce(step_status, '{}'::jsonb)
+          || jsonb_build_object($2::text, jsonb_build_object('status', 'failed', 'finished_at', now(), 'error', $3::text)),
+        error_message = $3,
+        finished_at = now()
+      where id = $1
+    `,
+    [jobId, step, message],
+  );
+}
+
+async function deleteFallbackArtifactsForCapture(capture: Capture) {
+  const artifactResult = await query<{ source_id: string; wiki_page_id: string | null }>(
+    `
+      select s.id as source_id, swp.wiki_page_id
+      from sources s
+      left join source_wiki_pages swp on swp.source_id = s.id
+      where s.capture_id = $1
+        and s.user_id = $2
+        and s.metadata ->> 'extraction_status' = 'fallback'
+    `,
+    [capture.id, capture.user_id],
+  );
+  const sourceIds = Array.from(new Set(artifactResult.rows.map((row) => row.source_id)));
+  const wikiPageIds = Array.from(
+    new Set(artifactResult.rows.map((row) => row.wiki_page_id).filter((id): id is string => Boolean(id))),
+  );
+
+  if (sourceIds.length === 0 && wikiPageIds.length === 0) {
+    return;
+  }
+
+  await query(
+    `
+      delete from knowledge_edges
+      where user_id = $1
+        and (
+          (from_type = 'source' and from_id = any($2::uuid[]))
+          or (to_type = 'source' and to_id = any($2::uuid[]))
+          or (from_type = 'wiki_page' and from_id = any($3::uuid[]))
+          or (to_type = 'wiki_page' and to_id = any($3::uuid[]))
+        )
+    `,
+    [capture.user_id, sourceIds, wikiPageIds],
+  );
+  await query(
+    `
+      delete from chunks
+      where user_id = $1
+        and (
+          (parent_type = 'source' and parent_id = any($2::uuid[]))
+          or (parent_type = 'wiki_page' and parent_id = any($3::uuid[]))
+        )
+    `,
+    [capture.user_id, sourceIds, wikiPageIds],
+  );
+  await query("delete from source_wiki_pages where source_id = any($1::uuid[])", [sourceIds]);
+  await query("delete from sources where user_id = $1 and id = any($2::uuid[])", [capture.user_id, sourceIds]);
+  await query(
+    `
+      delete from wiki_pages wp
+      where wp.user_id = $1
+        and wp.id = any($2::uuid[])
+        and not exists (
+          select 1
+          from source_wiki_pages swp
+          where swp.wiki_page_id = wp.id
+        )
+    `,
+    [capture.user_id, wikiPageIds],
+  );
+}
+
+function getFallbackProcessingMessage(extracted: ExtractedCaptureContent) {
+  return extracted.errorMessage || "资料已保存，但暂时没有提取到可处理正文。请补充截图或复制正文后重试。";
 }
 
 async function createSource(

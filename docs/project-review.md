@@ -1,5 +1,105 @@
 # Sift Project Review
 
+## Update: 2026-05-08
+
+### Current Verdict
+
+Sift remains complete enough for personal daily use, and the product has moved beyond a plain personal MVP into a stronger local-first knowledge layer.
+
+Since the 2026-05-05 review, the biggest changes are:
+
+- Local email/password accounts, HttpOnly sessions, profile update, password change, login rate limit, and first-account default-data claiming.
+- Settings center for account, model mode, model health, usage, smart quota, Stripe plan entry, and billing portal.
+- Private image uploads and vision OCR foundation.
+- Agent API / MCP locked down for authenticated or Bearer-token access.
+- `knowledge_edges` plus graph-aware retrieval for Ask, Wiki Ask, Agent Query, and one-hop relationship display.
+- `wiki_merge_histories` plus user-confirmed merge preview and commit flow for strong related/duplicate discoveries.
+- Processing recovery foundation for stuck jobs, missing embeddings, and post-processing enhancements.
+- Review fixes for smoke auth, merge SQL, same-origin protection, and user-scoped discovery joins.
+
+The current core loop is now:
+
+```text
+Capture -> Process -> Source/Wiki -> Edges/Discoveries -> Ask/Agent -> Merge/Review -> Manage
+```
+
+### What Is Stronger Now
+
+1. Account boundary is real enough for local and controlled internal use.
+
+The app no longer depends only on a hardcoded default user. The first real account can claim old single-user data, sessions are checked against `user_sessions`, and Agent/MCP access has clearer user resolution.
+
+2. Knowledge reuse now includes relationships and consolidation.
+
+Sift can record Source-Wiki, related Wiki, and duplicate Source edges, use them during retrieval, show local neighborhood links, and convert high-confidence discoveries into confirmed Wiki merges.
+
+3. Operational recovery is no longer only manual retry.
+
+The recovery path can repair interrupted processing, backfill missing embeddings, and rerun enhancement steps without rewriting everything.
+
+4. Browser-side write APIs have a clearer security baseline.
+
+Login, signup, account changes, capture writes, imports, asks, discovery actions, archive/delete, model settings, and billing entry points reject cross-origin browser requests. External integrations keep their own auth model.
+
+### Remaining Main Risks
+
+### P1 - Public SaaS auth is still not complete
+
+Current auth is good enough for personal/local use and controlled internal deployments. It is not yet enough for open public SaaS.
+
+Still missing:
+
+- email verification;
+- password reset;
+- organization/workspace membership;
+- invite flow;
+- admin/user management;
+- abuse prevention beyond login rate limit;
+- full tenant lifecycle and support tooling.
+
+Recommendation: do not treat current auth as production SaaS-ready. Make public SaaS auth a separate phase.
+
+### P1 - Merge has data history but not rollback UX
+
+`wiki_merge_histories` stores before/after content and related source ids, but there is no UI to preview and restore a previous merge.
+
+Recommendation: next hardening pass should add a merge history panel and one-click restore for target WikiPage content and chunks.
+
+### P1 - Regression coverage is still thinner than the feature surface
+
+`typecheck`, `lint`, `build`, and `smoke:agent` pass, but smoke mainly covers capture-first, OCR, Ask, Agent, MCP, encoded slugs, and graph retrieval. It does not yet cover all management actions, billing entry points, account settings, merge preview/commit, import variants, or same-origin rejection.
+
+Recommendation: add route-level regression smoke tests for:
+
+- login/signup/logout and rate-limit behavior;
+- capture import/supplement/retry/ignore;
+- source/wiki archive/restore/delete;
+- discovery ignore/ignore-source/merge;
+- same-origin rejection;
+- multi-user visibility boundaries.
+
+### P1 - Production processing still needs worker discipline
+
+Inline processing is useful locally. Broader deployment should use a durable queue and operational visibility.
+
+Recommendation: keep Inngest or an equivalent durable worker as the production path, and add an admin job monitor before broader rollout.
+
+### P2 - Model quality still needs evaluation
+
+The model surface is configurable and observable, but there is still no curated evaluation set for extraction, OCR, Wiki generation, retrieval, citations, and answer faithfulness.
+
+Recommendation: build a small seeded evaluation pack before changing default model choices.
+
+### Updated Priority
+
+1. Add regression smoke coverage around account, management, merge, and security boundaries.
+2. Add merge history review and rollback.
+3. Add a small job monitor and recovery dashboard.
+4. Build a model evaluation dataset and report format.
+5. Continue capture-surface work only after these hardening pieces stop the current surface from drifting.
+
+---
+
 Date: 2026-05-05
 
 ## Verdict
@@ -112,21 +212,23 @@ Recommendation:
 - measure extraction, OCR, wiki generation, retrieval, citation accuracy, and answer usefulness;
 - choose default models based on results, not preference.
 
-### P2 - Real merge is still missing
+### P2 - Merge exists, but rollback and policy are still incomplete
 
-Sift can detect similar or duplicate sources and wiki pages, but it does not yet provide a trusted one-click merge workflow.
+Sift can now detect strong related/duplicate discoveries, generate a merge preview, let the user edit and confirm it, update the target WikiPage, archive the incoming WikiPage, preserve source relations, and record `wiki_merge_histories`.
 
 Risk:
 
-- related captures still create separate pages;
-- the knowledge base may fragment as data grows;
-- users see suggestions but still need manual cleanup.
+- there is no visual rollback entry yet, even though before/after content is stored;
+- merge history is not exposed as a review surface;
+- weakly related pages still require manual judgment;
+- bulk or topic-level consolidation is still missing.
 
 Recommendation:
 
-- add "merge into existing wiki page" as the next high-value product action;
-- keep merge reversible at first;
-- show exactly which sources support the merged page.
+- add a merge history panel on WikiPage detail;
+- add one-click restore from `wiki_merge_histories`;
+- keep automatic merge out of scope until evaluation is stronger;
+- show exactly which sources support the merged page and what changed.
 
 ### P2 - Permanent delete is safe enough for MVP, but needs a clearer product policy
 

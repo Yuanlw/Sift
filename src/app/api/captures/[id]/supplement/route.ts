@@ -3,17 +3,24 @@ import { writeAuditLog } from "@/lib/audit";
 import { query } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
 import { processCaptureById } from "@/lib/processing/process-capture";
+import { validateSameOriginRequest } from "@/lib/request-security";
 import { MAX_CAPTURE_FILES, saveCaptureUploads, UploadValidationError } from "@/lib/upload-storage";
 import { getUserContextFromRequest } from "@/lib/user-context";
 import type { Capture, Json, RawAttachment } from "@/types/database";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
+    const originError = validateSameOriginRequest(request);
+
+    if (originError) {
+      return originError;
+    }
+
     if (!isUuid(params.id)) {
       return NextResponse.json({ error: "Invalid capture id." }, { status: 400 });
     }
 
-    const userContext = getUserContextFromRequest(request);
+    const userContext = await getUserContextFromRequest(request);
     const formData = await request.formData();
     const text = getFormText(formData.get("text"));
     const uploadedAttachments = await saveCaptureUploads(formData.getAll("files"));

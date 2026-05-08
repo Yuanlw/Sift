@@ -19,6 +19,7 @@ const copy = {
     vector: "语义",
     keyword: "关键词",
     titleScore: "标题",
+    graph: "关系",
     source: "来源资料",
     wiki: "知识页",
     history: "历史问答",
@@ -36,6 +37,7 @@ const copy = {
     vector: "semantic",
     keyword: "keyword",
     titleScore: "title",
+    graph: "graph",
     source: "source",
     wiki: "wiki page",
     history: "Ask history",
@@ -61,8 +63,15 @@ interface KnowledgeAnswer {
       wikiSlug?: string | null;
       preview: string;
       score: number;
+      graphExpanded?: boolean;
+      graph?: {
+        depth: number;
+        relationType: string | null;
+        path: string[];
+      } | null;
       matchReasons: string[];
       scores: {
+        graph: number;
         vector: number;
         keyword: number;
         title: number;
@@ -168,9 +177,15 @@ export function KnowledgeAskForm({
                       {context.matchReasons.join(" / ")}
                     </span>
                     <p>{context.preview}</p>
+                    {context.graph ? (
+                      <span className="meta">
+                        {formatGraphPath(context.graph, locale)}
+                      </span>
+                    ) : null}
                     <span className="meta">
                       {t.vector} {context.scores.vector.toFixed(2)} · {t.keyword}{" "}
-                      {context.scores.keyword.toFixed(2)} · {t.titleScore} {context.scores.title.toFixed(2)}
+                      {context.scores.keyword.toFixed(2)} · {t.titleScore} {context.scores.title.toFixed(2)} ·{" "}
+                      {t.graph} {(context.scores.graph || 0).toFixed(2)}
                     </span>
                   </div>
                 ))}
@@ -247,4 +262,25 @@ function formatHistoryTime(value: string, locale: Locale) {
 
 function toAnswerPreview(answer: string) {
   return answer.replace(/\s+/g, " ").trim().slice(0, 360);
+}
+
+function formatGraphPath(graph: NonNullable<KnowledgeAnswer["retrieval"]>["contexts"][number]["graph"], locale: Locale) {
+  if (!graph) {
+    return "";
+  }
+
+  const relationLabels: Record<string, { zh: string; en: string }> = {
+    contradicts: { zh: "冲突关系", en: "contradicts" },
+    duplicate_source: { zh: "重复来源", en: "duplicate source" },
+    related_wiki: { zh: "相关知识页", en: "related wiki" },
+    source_wiki: { zh: "来源归属", en: "source-wiki" },
+    supports: { zh: "证据支撑", en: "supports" },
+  };
+  const relations = graph.path.length > 0 ? graph.path : graph.relationType ? [graph.relationType] : [];
+  const path = relations
+    .map((relation) => relationLabels[relation]?.[locale] || relation)
+    .join(" -> ");
+  const hopLabel = locale === "zh" ? `${graph.depth}跳关系` : `${graph.depth}-hop graph`;
+
+  return path ? `${hopLabel}: ${path}` : hopLabel;
 }

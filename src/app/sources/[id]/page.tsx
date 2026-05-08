@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { KnowledgeGraphPanel } from "@/components/knowledge-graph-panel";
 import { SourceArchiveActions } from "@/components/source-archive-actions";
 import { query } from "@/lib/db";
 import { formatDateTime, getLocale, localeText } from "@/lib/i18n";
+import { loadKnowledgeGraphNeighborhood } from "@/lib/knowledge-graph";
 import { loadDuplicateSourceSuggestions } from "@/lib/reuse-suggestions";
 import { getUserContextFromHeaders } from "@/lib/user-context";
 import type { CaptureStatus, CaptureType } from "@/types/database";
@@ -71,7 +73,7 @@ function getCaptureTypeLabel(type: CaptureType, locale: ReturnType<typeof getLoc
 
 export default async function SourceDetailPage({ params }: { params: { id: string } }) {
   const locale = getLocale();
-  const userContext = getUserContextFromHeaders();
+  const userContext = await getUserContextFromHeaders();
   const source = await loadSource(params.id, userContext.userId);
 
   if (!source) {
@@ -81,6 +83,11 @@ export default async function SourceDetailPage({ params }: { params: { id: strin
   const duplicateSuggestions = await loadDuplicateSourceSuggestions({
     userId: userContext.userId,
     sourceId: source.id,
+  });
+  const graphNeighbors = await loadKnowledgeGraphNeighborhood({
+    nodeId: source.id,
+    nodeType: "source",
+    userId: userContext.userId,
   });
 
   return (
@@ -116,6 +123,7 @@ export default async function SourceDetailPage({ params }: { params: { id: strin
             <p>{source.wiki_title ? `${localeText(locale, "已生成知识页", "Wiki page")}：${source.wiki_title}` : localeText(locale, "等待生成知识页。", "Waiting for wiki page.")}</p>
             {source.capture_note ? <p>{localeText(locale, "备注", "Note")}：{source.capture_note}</p> : null}
           </div>
+          <KnowledgeGraphPanel locale={locale} neighbors={graphNeighbors} />
           <div className="panel">
             <h3>{localeText(locale, "资料管理", "Manage")}</h3>
             <p>
