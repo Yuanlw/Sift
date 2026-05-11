@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { getFilenameFromCaptureUploadUrl, getMimeTypeFromCaptureUploadFilename, readCaptureUpload } from "@/lib/upload-storage";
+import {
+  getCaptureUploadUrlVariants,
+  getFilenameFromCaptureUploadUrl,
+  getMimeTypeFromCaptureUploadFilename,
+  readCaptureUpload,
+} from "@/lib/upload-storage";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
 interface AttachmentRow {
@@ -17,6 +22,7 @@ export async function GET(request: Request, { params }: { params: { filename: st
     return NextResponse.json({ error: "Invalid upload filename." }, { status: 400 });
   }
 
+  const urlVariants = getCaptureUploadUrlVariants(filename);
   const attachment = await query<AttachmentRow>(
     `
       select
@@ -25,11 +31,11 @@ export async function GET(request: Request, { params }: { params: { filename: st
       from captures c
       cross join lateral jsonb_array_elements(c.raw_attachments) attachment
       where c.user_id = $1
-        and attachment ->> 'url' = $2
-        and attachment ->> 'storage' = 'local'
+        and attachment ->> 'url' = any($2::text[])
+        and coalesce(attachment ->> 'storage', 'local') = 'local'
       limit 1
     `,
-    [userContext.userId, url],
+    [userContext.userId, urlVariants],
   );
 
   if (!attachment.rows[0]) {

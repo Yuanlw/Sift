@@ -3,13 +3,14 @@ import { notFound } from "next/navigation";
 import { KnowledgeGraphPanel } from "@/components/knowledge-graph-panel";
 import { WikiArchiveActions } from "@/components/wiki-archive-actions";
 import { WikiAskForm } from "@/components/wiki-ask-form";
+import { WikiMergeRestoreAction } from "@/components/wiki-merge-restore-action";
 import { query } from "@/lib/db";
 import { formatDateTime, getLocale, localeText } from "@/lib/i18n";
 import { loadKnowledgeGraphNeighborhood } from "@/lib/knowledge-graph";
 import { loadSimilarWikiPageSuggestions } from "@/lib/reuse-suggestions";
 import { safeDecodeRouteParam } from "@/lib/route-params";
 import { getUserContextFromHeaders } from "@/lib/user-context";
-import type { WikiPageStatus } from "@/types/database";
+import type { Json, WikiPageStatus } from "@/types/database";
 
 interface WikiDetailRow {
   id: string;
@@ -31,6 +32,18 @@ interface AskHistoryRow {
   created_at: string;
 }
 
+interface WikiMergeHistoryRow {
+  id: string;
+  before_title: string;
+  after_title: string;
+  created_at: string;
+  merged_source_ids: Json;
+  merged_wiki_title: string | null;
+  merged_wiki_slug: string | null;
+  metadata: Json;
+  summary: string | null;
+}
+
 async function loadWikiPage(slug: string, userId: string) {
   const result = await query<WikiDetailRow>(
     `
@@ -42,12 +55,22 @@ async function loadWikiPage(slug: string, userId: string) {
         wp.status,
         wp.created_at,
         wp.updated_at,
-        s.id as source_id,
-        s.title as source_title,
-        s.original_url
+        source_link.source_id,
+        source_link.source_title,
+        source_link.original_url
       from wiki_pages wp
-      left join source_wiki_pages swp on swp.wiki_page_id = wp.id
-      left join sources s on s.id = swp.source_id
+      left join lateral (
+        select s.id as source_id, s.title as source_title, s.original_url
+        from source_wiki_pages swp
+        join sources s on s.id = swp.source_id
+        left join captures c on c.id = s.capture_id
+        where swp.wiki_page_id = wp.id
+          and s.user_id = wp.user_id
+          and swp.relation_type <> 'restored_from_merge'
+          and (c.status is null or c.status <> 'ignored')
+        order by s.created_at desc
+        limit 1
+      ) source_link on true
       where wp.slug = $1 and wp.user_id = $2
       limit 1
     `,
@@ -69,6 +92,33 @@ async function loadAskHistories(wikiPageId: string, userId: string) {
       limit 5
     `,
     [userId, wikiPageId],
+  );
+
+  return result.rows;
+}
+
+async function loadWikiMergeHistories(wikiPageId: string, userId: string) {
+  const result = await query<WikiMergeHistoryRow>(
+    `
+      select
+        h.id,
+        h.before_title,
+        h.after_title,
+        h.created_at,
+        h.merged_source_ids,
+        h.metadata,
+        h.summary,
+        mwp.title as merged_wiki_title,
+        mwp.slug as merged_wiki_slug
+      from wiki_merge_histories h
+      left join wiki_pages mwp on mwp.id = h.merged_wiki_page_id
+        and mwp.user_id = h.user_id
+      where h.target_wiki_page_id = $1
+        and h.user_id = $2
+      order by h.created_at desc
+      limit 8
+    `,
+    [wikiPageId, userId],
   );
 
   return result.rows;
@@ -99,6 +149,7 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
     userId: userContext.userId,
   });
   const askHistories = await loadAskHistories(page.id, userContext.userId);
+  const mergeHistories = await loadWikiMergeHistories(page.id, userContext.userId);
 
   return (
     <>
@@ -155,6 +206,50 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
             )}
           </div>
           <div className="panel">
+            <h3>{localeText(locale, "合并历史", "Merge history")}</h3>
+            {mergeHistories.length > 0 ? (
+              <div className="merge-history-list">
+                {mergeHistories.map((history, index) => {
+                  const lastRestoredAt = getLastRestoredAt(history.metadata);
+                  const disabledReason = getRestoreDisabledReason(index, lastRestoredAt, locale);
+
+                  return (
+                    <details className="merge-history-item" key={history.id}>
+                      <summary>
+                        <strong>{history.after_title}</strong>
+                        <span className="meta">{formatDateTime(history.created_at, locale)}</span>
+                      </summary>
+                      <p>{history.summary || localeText(locale, "这次合并没有填写改动摘要。", "No change summary was recorded.")}</p>
+                      <p className="meta">
+                        {localeText(locale, "合并前", "Before")}：{history.before_title}
+                      </p>
+                      {history.merged_wiki_slug ? (
+                        <Link className="meta-link" href={`/wiki/${encodeURIComponent(history.merged_wiki_slug)}`}>
+                          {localeText(locale, "并入页面", "Merged page")}：{history.merged_wiki_title}
+                        </Link>
+                      ) : history.merged_wiki_title ? (
+                        <p className="meta">
+                          {localeText(locale, "并入页面", "Merged page")}：{history.merged_wiki_title}
+                        </p>
+                      ) : null}
+                      <p className="meta">
+                        {localeText(locale, "涉及来源", "Sources")}：{getJsonArrayLength(history.merged_source_ids)}
+                      </p>
+                      {lastRestoredAt ? (
+                        <p className="meta">
+                          {localeText(locale, "上次恢复", "Last restored")}：{formatDateTime(lastRestoredAt, locale)}
+                        </p>
+                      ) : null}
+                      <WikiMergeRestoreAction disabledReason={disabledReason} historyId={history.id} locale={locale} />
+                    </details>
+                  );
+                })}
+              </div>
+            ) : (
+              <p>{localeText(locale, "还没有确认过合并。", "No confirmed merges yet.")}</p>
+            )}
+          </div>
+          <div className="panel">
             <h3>{localeText(locale, "历史问答", "Ask history")}</h3>
             {askHistories.length > 0 ? (
               <div className="ask-history-list">
@@ -186,6 +281,31 @@ export default async function WikiDetailPage({ params }: { params: { slug: strin
 
 function toAnswerPreview(answer: string) {
   return answer.replace(/\s+/g, " ").trim().slice(0, 360);
+}
+
+function getJsonArrayLength(value: Json) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function getLastRestoredAt(value: Json) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const restoredAt = value.last_restored_at;
+  return typeof restoredAt === "string" ? restoredAt : null;
+}
+
+function getRestoreDisabledReason(index: number, lastRestoredAt: string | null, locale: ReturnType<typeof getLocale>) {
+  if (lastRestoredAt) {
+    return localeText(locale, "这条合并历史已经恢复过。", "This merge history was already restored.");
+  }
+
+  if (index > 0) {
+    return localeText(locale, "只能从当前最新合并恢复，避免覆盖后续变更。", "Only the latest merge can be restored to avoid overwriting later changes.");
+  }
+
+  return null;
 }
 
 function getWikiStatusLabel(status: WikiPageStatus, locale: ReturnType<typeof getLocale>) {

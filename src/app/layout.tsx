@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LanguageToggle } from "@/components/language-toggle";
 import { MainNav } from "@/components/main-nav";
+import { isSupportAdminEmail } from "@/lib/admin-auth";
 import { getLocale, localeText } from "@/lib/i18n";
 import { getOptionalUserContextFromHeaders } from "@/lib/user-context";
 import "./globals.css";
@@ -9,6 +10,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Sift",
   description: "Turn scattered captures into reusable knowledge.",
+  manifest: "/manifest.webmanifest",
 };
 
 export default async function RootLayout({
@@ -21,6 +23,7 @@ export default async function RootLayout({
   const accountLabel = userContext?.email
     ? userContext.email
     : localeText(locale, "登录", "Log in");
+  const showAdmin = isSupportAdminEmail(userContext?.email);
 
   return (
     <html lang={locale === "en" ? "en" : "zh-CN"}>
@@ -32,7 +35,7 @@ export default async function RootLayout({
               <span>Sift</span>
             </Link>
             <div className="topbar-actions">
-              <MainNav locale={locale} />
+              <MainNav locale={locale} showAdmin={showAdmin} />
               <LanguageToggle locale={locale} />
               <Link className="account-pill" href={userContext?.email ? "/settings" : "/login"}>
                 <span className="account-dot" />
@@ -44,7 +47,7 @@ export default async function RootLayout({
           <footer className="site-footer">
             <div>
               <strong>Sift</strong>
-              <span>{localeText(locale, "Capture-first personal knowledge base.", "Capture-first personal knowledge base.")}</span>
+              <span>{localeText(locale, "先保存、再沉淀的个人知识库。", "Capture-first personal knowledge base.")}</span>
             </div>
             <nav aria-label={localeText(locale, "页脚导航", "Footer navigation")}>
               <Link href="/pricing">{localeText(locale, "价格", "Pricing")}</Link>

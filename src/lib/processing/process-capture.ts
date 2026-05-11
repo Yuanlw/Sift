@@ -5,9 +5,11 @@ import { createKnowledgeDiscoveriesForProcessedCapture } from "@/lib/knowledge-d
 import { createKnowledgeEdgesForProcessedCapture } from "@/lib/knowledge-edges";
 import { refreshKnowledgeRecommendationsForProcessedCapture } from "@/lib/knowledge-recommendations";
 import { embedTexts, generateKnowledgeDraft, type KnowledgeDraft } from "@/lib/models";
+import { recordProductEvent } from "@/lib/product-events";
 import { SmartQuotaExceededError } from "@/lib/smart-quota";
 import { toSlug } from "@/lib/slug";
 import { toSqlVector } from "@/lib/vector";
+import { ensureRawImageTextVisibleInWiki } from "@/lib/wiki-content";
 import type { Capture, ExtractedContent, ProcessingJob, Source, WikiPage } from "@/types/database";
 
 export async function processCaptureById(captureId: string) {
@@ -107,7 +109,7 @@ export async function processCaptureById(captureId: string) {
     const wikiPage = await runJobStep(job.id, currentStep, () =>
       createWikiPage(capture, source, {
         title: draft.wikiTitle || source.title,
-        markdown: draft.wikiMarkdown,
+        markdown: ensureRawImageTextVisibleInWiki(capture, draft.wikiMarkdown, source.extracted_text),
       }),
     );
 
@@ -507,6 +509,16 @@ async function createSource(
   capture: Capture,
   input: { title: string; text: string; summary: string; metadata: unknown },
 ) {
+  const existing = await query<{ id: string }>(
+    `
+      select id
+      from sources
+      where capture_id = $1
+      limit 1
+    `,
+    [capture.id],
+  );
+  const wasUpdate = Boolean(existing.rows[0]);
   const result = await query<Source>(
     `
       insert into sources (
@@ -534,6 +546,19 @@ async function createSource(
       input.metadata,
     ],
   );
+
+  await recordProductEvent({
+    eventName: wasUpdate ? "source.updated" : "source.created",
+    metadata: {
+      capture_id: capture.id,
+      event_action: wasUpdate ? "updated" : "created",
+      source_type: capture.type,
+    },
+    resourceId: result.rows[0].id,
+    resourceType: "source",
+    source: "processing",
+    userId: capture.user_id,
+  });
 
   return result.rows[0];
 }
@@ -567,23 +592,88 @@ async function createWikiPage(
       [existing.rows[0].id, input.title, input.markdown],
     );
 
+    await recordProductEvent({
+      eventName: "wiki.updated",
+      metadata: {
+        capture_id: capture.id,
+        event_action: "updated",
+        source_id: source.id,
+        status: updated.rows[0].status,
+      },
+      resourceId: updated.rows[0].id,
+      resourceType: "wiki_page",
+      source: "processing",
+      userId: capture.user_id,
+    });
+
     return updated.rows[0];
   }
 
   const slug = toSlug(input.title || source.title || source.id) || source.id;
+  const wikiSlug = `${slug}-${source.id.slice(0, 8)}`;
+  const existingBySlug = await query<WikiPage>(
+    `
+      select *
+      from wiki_pages
+      where user_id = $1
+        and slug = $2
+      limit 1
+    `,
+    [capture.user_id, wikiSlug],
+  );
+
+  if (existingBySlug.rows[0]) {
+    const updated = await query<WikiPage>(
+      `
+        update wiki_pages
+        set title = $2,
+            content_markdown = $3,
+            updated_at = now()
+        where id = $1
+        returning *
+      `,
+      [existingBySlug.rows[0].id, input.title, input.markdown],
+    );
+
+    await recordProductEvent({
+      eventName: "wiki.updated",
+      metadata: {
+        capture_id: capture.id,
+        event_action: "updated",
+        source_id: source.id,
+        status: updated.rows[0].status,
+      },
+      resourceId: updated.rows[0].id,
+      resourceType: "wiki_page",
+      source: "processing",
+      userId: capture.user_id,
+    });
+
+    return updated.rows[0];
+  }
+
   const result = await query<WikiPage>(
     `
       insert into wiki_pages (user_id, title, slug, content_markdown, status)
       values ($1, $2, $3, $4, 'draft')
-      on conflict (user_id, slug)
-      do update set
-        title = excluded.title,
-        content_markdown = excluded.content_markdown,
-        updated_at = now()
       returning *
     `,
-    [capture.user_id, input.title, `${slug}-${source.id.slice(0, 8)}`, input.markdown],
+    [capture.user_id, input.title, wikiSlug, input.markdown],
   );
+
+  await recordProductEvent({
+    eventName: "wiki.created",
+    metadata: {
+      capture_id: capture.id,
+      event_action: "created",
+      source_id: source.id,
+      status: result.rows[0].status,
+    },
+    resourceId: result.rows[0].id,
+    resourceType: "wiki_page",
+    source: "processing",
+    userId: capture.user_id,
+  });
 
   return result.rows[0];
 }

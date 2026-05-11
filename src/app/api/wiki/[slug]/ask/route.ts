@@ -50,7 +50,10 @@ async function loadWikiContext(slug: string, userId: string) {
           0 as relation_rank
         from target_wiki tw
         join source_wiki_pages swp on swp.wiki_page_id = tw.wiki_id
+          and swp.relation_type <> 'restored_from_merge'
         join sources s on s.id = swp.source_id and s.user_id = $2
+        left join captures c on c.id = s.capture_id
+        where c.status is null or c.status <> 'ignored'
       ),
       related_wikis as (
         select
@@ -62,10 +65,18 @@ async function loadWikiContext(slug: string, userId: string) {
         from target_wiki tw
         join knowledge_edges e on e.user_id = $2
           and e.edge_type = 'related_wiki'
+          and e.weight > 0
+          and (e.evidence->>'inactive_reason') is null
           and (
             (e.from_type = 'wiki_page' and e.from_id = tw.wiki_id and e.to_type = 'wiki_page')
             or (e.to_type = 'wiki_page' and e.to_id = tw.wiki_id and e.from_type = 'wiki_page')
           )
+        join wiki_pages wp on wp.id = case
+            when e.from_type = 'wiki_page' and e.from_id = tw.wiki_id then e.to_id
+            else e.from_id
+          end
+          and wp.user_id = $2
+          and wp.status <> 'archived'
         group by 1
       ),
       related_wiki_sources as (
@@ -81,7 +92,10 @@ async function loadWikiContext(slug: string, userId: string) {
           1 as relation_rank
         from related_wikis rw
         join source_wiki_pages swp on swp.wiki_page_id = rw.wiki_id
+          and swp.relation_type <> 'restored_from_merge'
         join sources s on s.id = swp.source_id and s.user_id = $2
+        left join captures c on c.id = s.capture_id
+        where c.status is null or c.status <> 'ignored'
       ),
       duplicate_sources as (
         select
@@ -97,12 +111,16 @@ async function loadWikiContext(slug: string, userId: string) {
         from direct_sources ds
         join knowledge_edges e on e.user_id = $2
           and e.edge_type = 'duplicate_source'
+          and e.weight > 0
+          and (e.evidence->>'inactive_reason') is null
           and (
             (e.from_type = 'source' and e.from_id = ds.source_id and e.to_type = 'source')
             or (e.to_type = 'source' and e.to_id = ds.source_id and e.from_type = 'source')
           )
         join sources s on s.user_id = $2
           and s.id = case when e.from_id = ds.source_id then e.to_id else e.from_id end
+        left join captures c on c.id = s.capture_id
+        where c.status is null or c.status <> 'ignored'
         group by s.id, s.title, s.summary, s.original_url, s.extracted_text, s.created_at
       ),
       candidate_sources as (

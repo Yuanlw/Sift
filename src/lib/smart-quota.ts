@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import type { ModelCallContext, ModelUsagePayload } from "@/lib/model-usage";
 import type { ModelSettingsMode } from "@/lib/model-settings";
+import { calculateCostBasedCredits } from "@/lib/smart-quota-cost";
 import type { Json } from "@/types/database";
 
 export type SmartQuotaCategory = "capture_processing" | "image_ocr" | "semantic_indexing" | "ask" | "retrieval";
@@ -127,19 +128,7 @@ export async function loadSmartQuotaSummary(userId: string) {
   try {
     const account = await ensureSmartQuotaAccount(userId);
     const period = getCurrentQuotaPeriod(new Date(), account.periodAnchorDay);
-    const result = await query<SmartQuotaUsageRow>(
-      `
-        select category, coalesce(sum(credits), 0)::text as credits
-        from smart_quota_ledger
-        where user_id = $1
-          and period_start = $2
-          and period_end = $3
-        group by category
-        order by category
-      `,
-      [userId, period.start, period.end],
-    );
-    const breakdown = result.rows.map((row) => ({
+    const breakdown = (await loadUnifiedQuotaUsage(userId, period)).map((row) => ({
       category: row.category,
       credits: toNumber(row.credits),
     }));
@@ -168,6 +157,55 @@ export async function loadSmartQuotaSummary(userId: string) {
       schemaReady: false,
       usedCredits: 0,
     };
+  }
+}
+
+async function loadUnifiedQuotaUsage(userId: string, period: { end: string; start: string }) {
+  try {
+    const result = await query<SmartQuotaUsageRow>(
+      `
+        with quota_usage as (
+          select category, credits
+          from smart_quota_ledger
+          where user_id = $1
+            and period_start = $2
+            and period_end = $3
+          union all
+          select category, credits
+          from sift_gateway_usage_ledger
+          where user_id = $1
+            and period_start = $2
+            and period_end = $3
+            and status in ('reserved', 'success')
+        )
+        select category, coalesce(sum(credits), 0)::text as credits
+        from quota_usage
+        group by category
+        order by category
+      `,
+      [userId, period.start, period.end],
+    );
+
+    return result.rows;
+  } catch (error) {
+    if (!isMissingQuotaTableError(error)) {
+      throw error;
+    }
+
+    const result = await query<SmartQuotaUsageRow>(
+      `
+        select category, coalesce(sum(credits), 0)::text as credits
+        from smart_quota_ledger
+        where user_id = $1
+          and period_start = $2
+          and period_end = $3
+        group by category
+        order by category
+      `,
+      [userId, period.start, period.end],
+    );
+
+    return result.rows;
   }
 }
 
@@ -211,6 +249,45 @@ export async function applyStripeBillingPlan(input: {
       input.customerId || null,
       input.subscriptionId || null,
       input.subscriptionStatus || null,
+    ],
+  );
+}
+
+export async function applyManualBillingPlan(input: {
+  monthlyCreditLimit: number | null;
+  planCode: string;
+  userId: string;
+}) {
+  await query(
+    `
+      insert into smart_quota_accounts (
+        user_id,
+        plan_code,
+        enforcement_mode,
+        monthly_credit_limit,
+        quota_source,
+        stripe_customer_id,
+        stripe_subscription_id,
+        stripe_subscription_status,
+        updated_at
+      )
+      values ($1, $2, $3, $4, 'manual', null, null, null, now())
+      on conflict (user_id)
+      do update set
+        plan_code = excluded.plan_code,
+        enforcement_mode = excluded.enforcement_mode,
+        monthly_credit_limit = excluded.monthly_credit_limit,
+        quota_source = excluded.quota_source,
+        stripe_customer_id = null,
+        stripe_subscription_id = null,
+        stripe_subscription_status = null,
+        updated_at = now()
+    `,
+    [
+      input.userId,
+      input.planCode,
+      input.monthlyCreditLimit === null ? "unlimited" : "hard_limit",
+      input.monthlyCreditLimit,
     ],
   );
 }
@@ -313,38 +390,20 @@ function calculateSmartQuotaDebit(input: {
   usage?: ModelUsagePayload | null;
 }) {
   const category = getQuotaCategory(input.context);
-  const totalTokens = input.usage?.total_tokens || 0;
-  const totalChars = (input.inputChars || 0) + (input.outputChars || 0);
-  const imageCount = getMetadataNumber(input.context.metadata?.image_count);
-  const requestCount = Math.max(1, input.requestCount);
-  let credits = 1;
+  const costEstimate = calculateCostBasedCredits(input);
   const calculation: Record<string, Json> = {
+    ...costEstimate.calculation,
     category,
     input_chars: input.inputChars || 0,
     output_chars: input.outputChars || 0,
-    request_count: requestCount,
-    total_tokens: totalTokens,
+    request_count: Math.max(1, input.requestCount),
+    total_tokens: input.usage?.total_tokens || 0,
   };
-
-  if (input.context.role === "vision") {
-    const billableImages = Math.max(imageCount || 0, requestCount);
-    credits = Math.max(20, billableImages * 20);
-    calculation.billable_images = billableImages;
-    calculation.rule = "vision: max(20, billable_images * 20)";
-  } else if (input.context.role === "embedding") {
-    credits = Math.max(1, Math.ceil((input.inputChars || 0) / 2000));
-    calculation.rule = "embedding: ceil(input_chars / 2000)";
-  } else {
-    const tokenCredits = totalTokens > 0 ? Math.ceil(totalTokens / 100) : 0;
-    const charCredits = totalTokens > 0 ? 0 : Math.ceil(totalChars / 1000) * 2;
-    credits = Math.max(1, tokenCredits || charCredits);
-    calculation.rule = totalTokens > 0 ? "text: ceil(total_tokens / 100)" : "text: ceil(chars / 1000) * 2";
-  }
 
   return {
     calculation,
     category,
-    credits,
+    credits: costEstimate.credits,
   };
 }
 
@@ -378,19 +437,6 @@ function getCurrentQuotaPeriod(date = new Date(), anchorDay = 1) {
     end: end.toISOString(),
     start: start.toISOString(),
   };
-}
-
-function getMetadataNumber(value: Json | undefined) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
 }
 
 function toNumber(value: number | string | null | undefined) {

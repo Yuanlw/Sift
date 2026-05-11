@@ -30,6 +30,8 @@ cp .env.example .env.local
 - `MODEL_PROVIDER`
 - `MODEL_BASE_URL`
 - `MODEL_API_KEY`
+- `SIFT_MODEL_GATEWAY_BASE_URL`
+- `SIFT_MODEL_GATEWAY_API_KEY`
 - `MODEL_TEXT_MODEL`
 - `MODEL_TEXT_THINKING`
 - `MODEL_TEXT_REASONING_EFFORT`
@@ -138,6 +140,25 @@ MODEL_API_KEY=local
 - `/v1/embeddings`
 
 Sift 就可以先跑通。这个服务可以是本地服务，也可以是 One API、LiteLLM、vLLM、自建网关，或云模型厂商的 OpenAI-compatible 入口。
+
+如果使用个人订阅或托管默认模型，可以改用 Sift Model Gateway：
+
+```text
+SIFT_MODEL_GATEWAY_BASE_URL=https://gateway.example.com/v1
+SIFT_MODEL_GATEWAY_API_KEY=your-sift-gateway-token
+```
+
+这两个变量是 Sift 网关授权，不是底层模型供应商 API Key，必须成对填写。只填写 `SIFT_MODEL_GATEWAY_BASE_URL` 或只填写 `SIFT_MODEL_GATEWAY_API_KEY` 会被视为配置错误，避免把网关 endpoint 和本地 key 混用。配置完整后，默认模型会优先走 Sift Gateway；`MODEL_TEXT_BASE_URL`、`MODEL_EMBEDDING_BASE_URL` 或 `MODEL_VISION_BASE_URL` 单独填写时仍会覆盖对应角色。使用 Sift Gateway 时，待处理内容会发送到云端模型服务；如果需要完全离线，应使用自定义本地模型模式。
+
+Gateway token 应从 Sift 账号/订阅中心签发，并只保存在本机服务端配置里。更换电脑、疑似泄露或取消订阅时，应该在账号中心吊销旧 token，再替换 `SIFT_MODEL_GATEWAY_API_KEY` 并重启本地服务。它不应该被当作 OpenAI、Claude、Gemini、DeepSeek、Qwen 或 Kimi 的供应商 API Key 分发给用户。
+
+如果本地环境也承担早期运营/客服查询，可配置只读后台白名单：
+
+```text
+SIFT_ADMIN_EMAILS=ops@example.com,support@example.com
+```
+
+未配置时 `/admin/account-support` 默认关闭；配置后只有白名单邮箱登录后才能按用户邮箱查询订阅、额度、token prefix 和最近 Gateway 拒绝原因。
 
 后续应提供专用 provider adapter，优先覆盖：
 

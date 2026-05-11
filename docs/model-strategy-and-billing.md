@@ -99,11 +99,89 @@ This gives Sift enough data for:
 
 ## User Configuration vs Default Hosted Models
 
-Sift should support two business modes.
+Sift should support three user-facing model modes, but only two technical execution paths.
+
+User-facing modes:
+
+- Hassle-free subscription mode: Sift provides model capacity through a Sift-operated model gateway. Users see quota, capabilities, and health, not providers, model names, or API keys.
+- Local self-managed mode: users run Sift locally and point it to a local model gateway such as Ollama, LM Studio, MLX, or vLLM.
+- Advanced BYOK/private-gateway mode: technical users or companies provide their own API keys or internal model gateway.
+
+Technical execution paths:
+
+- Default hosted model mode: Sift controls the model endpoint and bills usage through smart quota.
+- Custom model mode: the user controls the model endpoint and pays the model provider or local infrastructure directly.
+
+The product should not market "many model providers" as the default personal-user value proposition. For personal users, the value proposition is that Sift works without asking them to understand model vendors, keys, embedding dimensions, OCR models, or provider billing.
+
+### Local app plus Sift Gateway authorization
+
+The local app should not receive underlying provider keys.
+
+For a subscribed local user, the local Sift server can use:
+
+- `SIFT_MODEL_GATEWAY_BASE_URL`: OpenAI-compatible Sift gateway endpoint.
+- `SIFT_MODEL_GATEWAY_API_KEY`: scoped Sift gateway token tied to subscription/account authorization.
+
+These two values must be configured together. Setting only the endpoint or only the token should be treated as a configuration error, because partial gateway configuration can mix a Sift endpoint with a local/provider key, or a Sift token with a local endpoint.
+
+This token is not a provider API key. It should authorize Sift Gateway usage, enforce plan/quota on the gateway side, and allow revocation without rotating vendor credentials.
+
+Gateway token lifecycle:
+
+- Issuance: the token is issued from the Sift account/subscription center, not from the local app.
+- Binding: the token is scoped to a Sift account, subscription, plan, and optionally a local device/install id.
+- Storage: the local or self-hosted Sift server stores the token in server-side env/config only; it should not be returned to browser settings pages.
+- Rotation: when a machine is replaced or a token is suspected to be exposed, the account center should issue a new token and invalidate the old one.
+- Revocation: subscription cancellation, failed payment downgrade, device loss, or manual admin action should revoke gateway access without touching underlying vendor credentials.
+- Enforcement: quota and plan limits should be enforced at the gateway/account side; the local app can show configured/not-configured status but should not become the billing source of truth.
+
+Precedence:
+
+1. Role-specific custom env such as `MODEL_TEXT_BASE_URL` / `MODEL_TEXT_API_KEY`.
+2. Sift gateway env: `SIFT_MODEL_GATEWAY_BASE_URL` / `SIFT_MODEL_GATEWAY_API_KEY`.
+3. Generic local/default env: `MODEL_BASE_URL` / `MODEL_API_KEY`.
+
+Product boundary:
+
+- Local database and files can remain local.
+- Default hosted model processing sends the relevant text/image content to Sift Gateway.
+- Fully offline usage requires custom local model mode.
+- BYOK/private gateway remains the enterprise and advanced-user control path.
+
+### Sift Cloud control plane
+
+Yes, Sift needs a backend service for commercial subscriptions and default model access. It should be a control plane, not a replacement for the local knowledge product.
+
+First responsibilities:
+
+- account and subscription identity;
+- Stripe webhook handling and plan state;
+- Sift Gateway token issuance, rotation, revocation, and device/install binding;
+- smart quota entitlement and gateway-side enforcement;
+- model gateway routing, provider key custody, and cost guardrails;
+- support/admin visibility for failed payments, revoked tokens, abuse, and quota disputes.
+
+First API skeleton:
+
+- signed-in account APIs issue, list, and revoke `sift_gateway_tokens`;
+- gateway server APIs validate token hash, status, expiry, plan, and quota before a model call;
+- gateway validation reserves estimated usage in `sift_gateway_usage_ledger`, and the gateway settles that authorization after the provider call succeeds or fails;
+- revoked, expired, over-quota, oversized, and rate-limited attempts are recorded as rejected events for abuse analysis;
+- the raw gateway token is returned once and never stored in plaintext.
+
+Responsibilities that should stay inside the local Sift app:
+
+- captures, sources, wiki pages, chunks, local files, and user knowledge data;
+- local auth/session for the local install;
+- custom model/BYOK settings;
+- local usage display and model health signals.
+
+The product boundary is: Sift Cloud manages authorization and model capacity; local Sift manages the user's knowledge base. Local storage does not imply offline model processing when default hosted models are enabled.
 
 ### Custom model mode
 
-The user provides their own model keys or local model gateway in the Sift settings UI.
+The user provides their own model keys or local model gateway in the Sift settings UI. This is an advanced/self-managed path, not the default personal onboarding path.
 
 Examples:
 
@@ -124,13 +202,14 @@ Billing implication:
 
 ### Default hosted model mode
 
-The user uses model capacity provided by Sift.
+The user uses model capacity provided by Sift. For SaaS this is a Sift-hosted model gateway. For a local app with an active subscription, the local Sift instance can still call the Sift gateway after account/subscription authorization, while keeping the user's database local.
 
 Product implication:
 
 - The UI should show capabilities, quota, usage, and health status.
 - It should not show the underlying provider, model name, endpoint, or API keys to regular users.
 - Deployment `.env` values are allowed as SaaS/default-model infrastructure configuration, but normal users should configure models in the settings UI.
+- Local users must be told clearly when default hosted models send captured content to Sift's model gateway for processing. Local storage does not mean fully offline processing unless custom local models are configured.
 
 Billing implication:
 
@@ -140,11 +219,24 @@ Billing implication:
 
 Possible product packaging:
 
-- Free/local: BYOK only, local or self-hosted.
-- Personal: included monthly model credits, extra usage paid or throttled.
-- Pro: higher model credits, faster processing, better default models.
-- Team: shared workspace, admin controls, higher limits, audit and support.
+- Free/local: local app plus BYOK/local model only, no Sift-hosted model quota.
+- Personal: local or hosted app with included Sift gateway credits, designed for non-technical individual users.
+- Pro: higher model credits, faster processing, larger imports, stronger default model policy.
+- Team: shared workspace, admin controls, shared quota, audit, and support.
 - Enterprise/self-hosted: BYOK or private model gateway, custom commercial terms.
+
+Plan positioning:
+
+- Personal sells "I do not need to understand models; Sift just works."
+- Pro sells "I process and ask more, with enough quota for heavy knowledge work."
+- Team sells "We can share a knowledge layer, quota, control, and audit."
+- Enterprise sells "We can keep data, models, deployment, and contract terms under our control."
+
+Commercial priority:
+
+1. Personal subscription must hide model keys and provider choices.
+2. Local app plus Sift gateway should be a first-class path, because it keeps the local-first story while removing the biggest model-configuration barrier.
+3. BYOK/local model remains important, but it should be positioned as control and privacy, not as the normal setup.
 
 ## Charging Principles
 
@@ -179,7 +271,7 @@ User-facing model:
 Internal accounting model:
 
 - OCR, text calls, embeddings, Ask, management search, and Agent retrieval are still recorded separately.
-- Each successful default-model call writes a quota ledger row.
+- Successful default-model calls are exposed as one user-facing smart quota. Local/default endpoints write `smart_quota_ledger`; Sift Gateway calls use `sift_gateway_usage_ledger` as the control-plane billing fact and should not be double-counted as local smart-quota debits.
 - The ledger stores stage, role, purpose, resource id, model-call id, category, credits, and calculation metadata.
 - Raw prompts, source text, image content, and model outputs are never stored in quota ledger rows.
 

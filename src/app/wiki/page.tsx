@@ -20,12 +20,11 @@ interface WikiListRow {
 interface WikiListParams {
   limit: number;
   q: string;
-  view: "active" | "archived" | "low-signal";
+  view: "active" | "archived";
 }
 
 const WIKI_PAGE_SIZE = 24;
 const WIKI_MAX_LIMIT = 144;
-const LOW_SIGNAL_PATTERN = "(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)";
 
 async function loadWikiPages(params: WikiListParams) {
   const userContext = await getUserContextFromHeaders();
@@ -45,7 +44,10 @@ async function loadWikiPages(params: WikiListParams) {
         select s.title as source_title
         from source_wiki_pages swp
         join sources s on s.id = swp.source_id
+        left join captures c on c.id = s.capture_id
         where swp.wiki_page_id = wp.id
+          and swp.relation_type <> 'restored_from_merge'
+          and (c.status is null or c.status <> 'ignored')
         order by s.created_at desc
         limit 1
       ) source_link on true
@@ -56,29 +58,15 @@ async function loadWikiPages(params: WikiListParams) {
             and wp.status = 'archived'
           )
           or (
-            $3 = 'low-signal'
-            and wp.status <> 'archived'
-            and (
-              wp.title ~* $4
-              or wp.content_markdown ~* $4
-              or coalesce(source_link.source_title, '') ~* $4
-            )
-          )
-          or (
             $3 = 'active'
             and wp.status <> 'archived'
-            and not (
-              wp.title ~* $4
-              or wp.content_markdown ~* $4
-              or coalesce(source_link.source_title, '') ~* $4
-            )
           )
         )
         and (
           $2 = ''
           or to_tsvector('simple', wp.title || ' ' || wp.content_markdown)
             @@ websearch_to_tsquery('simple', $2)
-          or wp.slug = any($6::text[])
+          or wp.slug = any($5::text[])
           or wp.title ilike '%' || $2 || '%'
           or wp.content_markdown ilike '%' || $2 || '%'
         )
@@ -90,11 +78,11 @@ async function loadWikiPages(params: WikiListParams) {
           )
           else 0
         end desc,
-        case when wp.slug = any($6::text[]) then 1 else 0 end desc,
+        case when wp.slug = any($5::text[]) then 1 else 0 end desc,
         wp.updated_at desc
-      limit $5
+      limit $4
     `,
-    [userContext.userId, params.q, params.view, LOW_SIGNAL_PATTERN, params.limit + 1, semanticWikiSlugs],
+    [userContext.userId, params.q, params.view, params.limit + 1, semanticWikiSlugs],
   );
 
   return result.rows;
@@ -197,8 +185,6 @@ export default async function WikiPage({ searchParams }: { searchParams?: Record
           title={
             listParams.view === "archived"
               ? localeText(locale, "还没有已归档知识页", "No archived wiki pages")
-              : listParams.view === "low-signal"
-                ? localeText(locale, "还没有测试知识页", "No test wiki pages")
               : localeText(locale, "还没有知识页", "No wiki pages yet")
           }
           detail={localeText(locale, "可以换个筛选条件，或继续收集新的资料。", "Try another filter or keep capturing new material.")}
@@ -237,9 +223,6 @@ function ListToolbar({ locale, params }: { locale: ReturnType<typeof getLocale>;
         <Link className={params.view === "archived" ? "is-active" : ""} href={buildWikiHref({ ...params, view: "archived" }, WIKI_PAGE_SIZE)} scroll={false}>
           {localeText(locale, "已归档", "Archived")}
         </Link>
-        <Link className={params.view === "low-signal" ? "is-active" : ""} href={buildWikiHref({ ...params, view: "low-signal" }, WIKI_PAGE_SIZE)} scroll={false}>
-          {localeText(locale, "测试资料", "Tests")}
-        </Link>
       </div>
       <form className="management-filter-form" method="get">
         <input name="view" type="hidden" value={params.view} />
@@ -266,7 +249,7 @@ function parseWikiListParams(searchParams: Record<string, string | undefined> | 
 }
 
 function parseWikiView(value: string | undefined): WikiListParams["view"] {
-  return value === "archived" || value === "low-signal" ? value : "active";
+  return value === "archived" ? value : "active";
 }
 
 function parseLimit(value: string | undefined) {
@@ -283,10 +266,6 @@ function buildWikiHref(params: WikiListParams, limit: number) {
   const searchParams = new URLSearchParams();
 
   if (params.view === "archived") {
-    searchParams.set("view", params.view);
-  }
-
-  if (params.view === "low-signal") {
     searchParams.set("view", params.view);
   }
 

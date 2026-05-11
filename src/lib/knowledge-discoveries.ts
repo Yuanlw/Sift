@@ -168,12 +168,18 @@ export async function loadKnowledgeDiscoveries(input: {
         rwp.slug as related_wiki_slug
       from knowledge_discoveries kd
       left join sources s on s.id = kd.source_id and s.user_id = kd.user_id
-      left join wiki_pages wp on wp.id = kd.wiki_page_id and wp.user_id = kd.user_id
+      left join captures c on c.id = s.capture_id
+      left join wiki_pages wp on wp.id = kd.wiki_page_id and wp.user_id = kd.user_id and wp.status <> 'archived'
       left join sources rs on rs.id = kd.related_source_id and rs.user_id = kd.user_id
-      left join wiki_pages rwp on rwp.id = kd.related_wiki_page_id and rwp.user_id = kd.user_id
+      left join captures rc on rc.id = rs.capture_id
+      left join wiki_pages rwp on rwp.id = kd.related_wiki_page_id and rwp.user_id = kd.user_id and rwp.status <> 'archived'
       where kd.user_id = $1
         and kd.status <> 'ignored'
         and kd.discovery_type in ('related_wiki', 'duplicate_source')
+        and (s.id is null or c.status is null or c.status <> 'ignored')
+        and (rs.id is null or rc.status is null or rc.status <> 'ignored')
+        and (kd.wiki_page_id is null or wp.id is not null)
+        and (kd.related_wiki_page_id is null or rwp.id is not null)
       order by kd.created_at desc
       limit $2
     `,

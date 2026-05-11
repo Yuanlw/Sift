@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
 import { MissingEnvError } from "@/lib/env";
-import { deleteArchivedSources } from "@/lib/permanent-delete";
+import { deleteSourcesCascade } from "@/lib/permanent-delete";
 import { validateSameOriginRequest } from "@/lib/request-security";
 import { transaction } from "@/lib/db";
 import { getUserContextFromRequest } from "@/lib/user-context";
@@ -29,10 +29,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
         `
           select s.id as source_id, s.capture_id
           from sources s
-          join captures c on c.id = s.capture_id
           where s.id = $1
             and s.user_id = $2
-            and c.status = 'ignored'
           limit 1
         `,
         [params.id, userContext.userId],
@@ -43,7 +41,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         return null;
       }
 
-      await deleteArchivedSources(client, {
+      await deleteSourcesCascade(client, {
         captureIds: [row.capture_id],
         sourceIds: [row.source_id],
         userId: userContext.userId,
@@ -61,7 +59,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         status: "denied",
         request,
       });
-      return NextResponse.json({ error: "只能永久删除已归档来源。" }, { status: 409 });
+      return NextResponse.json({ error: "Source not found." }, { status: 404 });
     }
 
     await writeAuditLog({
@@ -78,7 +76,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     return NextResponse.json({
       status: "deleted",
-      message: "已永久删除来源资料，并清理相关检索片段。",
+      message: "已永久删除来源资料，并清理关联知识页和检索片段。",
     });
   } catch (error) {
     if (error instanceof MissingEnvError) {

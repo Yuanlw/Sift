@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, createSignedSessionCookie, registerUser } from "@/lib/auth";
+import { recordProductEvent } from "@/lib/product-events";
 import { validateSameOriginRequest } from "@/lib/request-security";
 
 const signupSchema = z.object({
@@ -24,6 +25,16 @@ export async function POST(request: Request) {
 
   try {
     const user = await registerUser(parsed.data);
+    await recordProductEvent({
+      eventName: "signup.completed",
+      metadata: {
+        next: new URL(request.url).searchParams.get("next") || null,
+      },
+      resourceId: user.id,
+      resourceType: "user",
+      source: "signup",
+      userId: user.id,
+    });
     const cookie = await createSignedSessionCookie({
       displayName: user.displayName,
       email: user.email,

@@ -62,6 +62,9 @@ export async function loadKnowledgeGraphNeighborhood(input: {
           e.weight * coalesce(e.confidence, 1) as score
         from knowledge_edges e
         where e.user_id = $1
+          and e.edge_type <> 'source_wiki'
+          and e.weight > 0
+          and (e.evidence->>'inactive_reason') is null
           and (
             (e.from_type = $2 and e.from_id = $3)
             or (e.to_type = $2 and e.to_id = $3)
@@ -90,11 +93,12 @@ export async function loadKnowledgeGraphNeighborhood(input: {
       left join sources s on re.related_type = 'source'
         and s.id = re.related_id
         and s.user_id = $1
+      left join captures c on c.id = s.capture_id
       left join wiki_pages wp on re.related_type = 'wiki_page'
         and wp.id = re.related_id
         and wp.user_id = $1
-      where (re.related_type = 'source' and s.id is not null)
-         or (re.related_type = 'wiki_page' and wp.id is not null)
+      where (re.related_type = 'source' and s.id is not null and (c.status is null or c.status <> 'ignored'))
+         or (re.related_type = 'wiki_page' and wp.id is not null and wp.status <> 'archived')
       order by (re.weight * coalesce(re.confidence, 1)) desc, re.updated_at desc
       limit $4
     `,

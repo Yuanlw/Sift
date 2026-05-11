@@ -35,11 +35,17 @@ async function loadHomeStats(userId: string) {
     const result = await query<HomeStats>(
       `
         select
-          (select count(*) from captures where user_id = $1) as captures,
+          (select count(*) from captures where user_id = $1 and status <> 'ignored') as captures,
           (select count(*) from captures where user_id = $1 and status = 'completed') as completed_captures,
           (select count(*) from captures where user_id = $1 and status = 'failed') as failed_captures,
-          (select count(*) from sources where user_id = $1) as sources,
-          (select count(*) from wiki_pages where user_id = $1) as wiki_pages
+          (
+            select count(*)
+            from sources s
+            left join captures c on c.id = s.capture_id
+            where s.user_id = $1
+              and (c.status is null or c.status <> 'ignored')
+          ) as sources,
+          (select count(*) from wiki_pages where user_id = $1 and status <> 'archived') as wiki_pages
       `,
       [userId],
     );
@@ -66,11 +72,18 @@ async function loadTodayReview(userId: string) {
             where user_id = $1
               and created_at >= $2
               and created_at < $3
+              and exists (
+                select 1
+                from captures c
+                where c.id = sources.capture_id
+                  and c.status <> 'ignored'
+              )
           ) as today_sources
         from captures
         where user_id = $1
           and created_at >= $2
           and created_at < $3
+          and status <> 'ignored'
       `,
       [userId, range.start, range.end],
     );

@@ -51,9 +51,11 @@ export async function loadDuplicateSourceSuggestions(input: {
   const sources = await query<SourceForSuggestion>(
     `
       select id, title, original_url, extracted_text, summary, created_at
-      from sources
-      where user_id = $1
-      order by created_at desc
+      from sources s
+      left join captures c on c.id = s.capture_id
+      where s.user_id = $1
+        and (c.status is null or c.status <> 'ignored')
+      order by s.created_at desc
       limit 300
     `,
     [input.userId],
@@ -84,6 +86,7 @@ export async function loadSimilarWikiPageSuggestions(input: {
         select id, title, slug, content_markdown, updated_at
         from wiki_pages
         where user_id = $1
+          and status <> 'archived'
         order by updated_at desc
         limit 300
       `,
@@ -148,6 +151,8 @@ async function loadVectorWikiSuggestions(userId: string, wikiPageId: string, lim
         and c.parent_id <> $2
         and c.embedding is not null
       join wiki_pages wp on wp.id = c.parent_id
+        and wp.user_id = $1
+        and wp.status <> 'archived'
       group by wp.id, wp.title, wp.slug, wp.updated_at
       order by distance asc
       limit $3

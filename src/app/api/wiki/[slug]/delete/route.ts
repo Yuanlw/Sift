@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
 import { transaction } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
-import { deleteArchivedWikiPages } from "@/lib/permanent-delete";
+import { deleteWikiPagesCascade } from "@/lib/permanent-delete";
 import { validateSameOriginRequest } from "@/lib/request-security";
 import { safeDecodeRouteParam } from "@/lib/route-params";
 import { getUserContextFromRequest } from "@/lib/user-context";
@@ -34,7 +34,6 @@ export async function POST(request: Request, { params }: { params: { slug: strin
           from wiki_pages
           where slug = $1
             and user_id = $2
-            and status = 'archived'
           limit 1
         `,
         [slug, userContext.userId],
@@ -45,7 +44,7 @@ export async function POST(request: Request, { params }: { params: { slug: strin
         return null;
       }
 
-      await deleteArchivedWikiPages(client, {
+      await deleteWikiPagesCascade(client, {
         slugs: [row.slug],
         userId: userContext.userId,
         wikiPageIds: [row.id],
@@ -63,7 +62,7 @@ export async function POST(request: Request, { params }: { params: { slug: strin
         status: "denied",
         request,
       });
-      return NextResponse.json({ error: "只能永久删除已归档知识页。" }, { status: 409 });
+      return NextResponse.json({ error: "Wiki page not found." }, { status: 404 });
     }
 
     await writeAuditLog({
@@ -80,7 +79,7 @@ export async function POST(request: Request, { params }: { params: { slug: strin
 
     return NextResponse.json({
       status: "deleted",
-      message: "已永久删除知识页，并清理相关检索片段和历史问答。",
+      message: "已永久删除知识页，并清理关联来源和检索片段。",
     });
   } catch (error) {
     if (error instanceof MissingEnvError) {

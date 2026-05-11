@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { getServerEnv } from "@/lib/env";
 import { recordSmartQuotaDebit } from "@/lib/smart-quota";
 import type { ModelSettingsMode } from "@/lib/model-settings";
 import type { Json } from "@/types/database";
@@ -111,7 +112,7 @@ export async function recordModelCall(input: {
     );
     const modelCallLogId = result.rows[0]?.id;
 
-    if (modelCallLogId && input.status === "success") {
+    if (modelCallLogId && input.status === "success" && !isSiftGatewayCall(input.baseUrl)) {
       await recordSmartQuotaDebit({
         context: input.context,
         inputChars: input.inputChars,
@@ -137,4 +138,22 @@ function toEndpointHost(baseUrl: string) {
   } catch {
     return "unknown";
   }
+}
+
+function isSiftGatewayCall(baseUrl: string) {
+  try {
+    const env = getServerEnv();
+
+    if (!env.SIFT_MODEL_GATEWAY_CONFIGURED) {
+      return false;
+    }
+
+    return trimTrailingSlash(baseUrl) === trimTrailingSlash(env.SIFT_MODEL_GATEWAY_BASE_URL!);
+  } catch {
+    return false;
+  }
+}
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, "");
 }

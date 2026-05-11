@@ -543,13 +543,23 @@ async function claimDefaultUserData(client: { query: (text: string, values?: unk
     "knowledge_discoveries",
     "knowledge_edges",
     "knowledge_recommendations",
+    "wiki_merge_histories",
     "model_call_logs",
     "smart_quota_ledger",
+    "sift_gateway_tokens",
+    "sift_gateway_usage_ledger",
+    "manual_refunds",
+    "support_case_notes",
+    "product_events",
   ];
 
   for (const table of userScopedTables) {
-    await client.query(`update ${table} set user_id = $2 where user_id = $1`, [defaultUserId, userId]);
+    await updateClaimColumnIfTableExists(client, table, "user_id", defaultUserId, userId);
   }
+
+  await updateClaimColumnIfTableExists(client, "manual_refunds", "requested_by_user_id", defaultUserId, userId);
+  await updateClaimColumnIfTableExists(client, "manual_refunds", "processed_by_user_id", defaultUserId, userId);
+  await updateClaimColumnIfTableExists(client, "support_case_notes", "admin_user_id", defaultUserId, userId);
 
   await client.query(
     `
@@ -630,6 +640,26 @@ async function claimDefaultUserData(client: { query: (text: string, values?: unk
     [defaultUserId, userId],
   );
   await client.query("delete from smart_quota_accounts where user_id = $1", [defaultUserId]);
+}
+
+async function updateClaimColumnIfTableExists(
+  client: { query: (text: string, values?: unknown[]) => Promise<unknown> },
+  table: string,
+  column: string,
+  defaultUserId: string,
+  userId: string,
+) {
+  try {
+    await client.query(`update ${table} set ${column} = $2 where ${column} = $1`, [defaultUserId, userId]);
+  } catch (error) {
+    if (!isMissingRelationError(error)) {
+      throw error;
+    }
+  }
+}
+
+function isMissingRelationError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "42P01");
 }
 
 function isUniqueViolation(error: unknown) {

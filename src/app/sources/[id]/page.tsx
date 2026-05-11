@@ -42,12 +42,21 @@ async function loadSource(id: string, userId: string) {
         s.capture_id,
         c.status as capture_status,
         c.note as capture_note,
-        wp.title as wiki_title,
-        wp.slug as wiki_slug
+        wiki_link.wiki_title,
+        wiki_link.wiki_slug
       from sources s
       left join captures c on c.id = s.capture_id
-      left join source_wiki_pages swp on swp.source_id = s.id
-      left join wiki_pages wp on wp.id = swp.wiki_page_id
+      left join lateral (
+        select wp.title as wiki_title, wp.slug as wiki_slug
+        from source_wiki_pages swp
+        join wiki_pages wp on wp.id = swp.wiki_page_id
+        where swp.source_id = s.id
+          and wp.user_id = s.user_id
+          and wp.status <> 'archived'
+          and swp.relation_type <> 'restored_from_merge'
+        order by swp.created_at desc
+        limit 1
+      ) wiki_link on true
       where s.id = $1 and s.user_id = $2
       limit 1
     `,

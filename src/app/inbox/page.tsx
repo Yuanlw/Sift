@@ -12,7 +12,7 @@ import { getUserContextFromHeaders } from "@/lib/user-context";
 import type { CaptureStatus, CaptureType, JobStatus, Json, RawAttachment } from "@/types/database";
 
 type InputKind = "link" | "text" | "image";
-type InboxView = "all" | "today" | "active" | "failed" | "needs-note" | "ignored" | "low-signal";
+type InboxView = "all" | "today" | "active" | "failed" | "needs-note" | "ignored";
 
 interface CaptureResultRow {
   id: string;
@@ -41,22 +41,12 @@ interface InboxStats {
   defaultCount: number;
   failedCount: number;
   ignoredCount: number;
-  lowSignalCount: number;
   missingNoteCount: number;
   todayCount: number;
 }
 
 const CAPTURE_LIST_LIMIT = 36;
 const CAPTURE_LIST_MAX_LIMIT = 180;
-const LOW_SIGNAL_CAPTURE_SQL = `
-  (
-    coalesce(c.raw_text, '') ~* '(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)'
-    or coalesce(c.raw_url, '') ~* '(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)'
-    or coalesce(s.title, '') ~* '(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)'
-    or coalesce(wp.title, '') ~* '(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)'
-  )
-`;
-
 async function loadCaptureResults(userId: string, view: InboxView, limit = CAPTURE_LIST_LIMIT) {
   const todayRange = getTodayRange();
   const filters = getCaptureViewSqlFilter(view);
@@ -78,9 +68,9 @@ async function loadCaptureResults(userId: string, view: InboxView, limit = CAPTU
         pj.created_at as job_created_at,
         s.id as source_id,
         s.title as source_title,
-        wp.id as wiki_page_id,
-        wp.title as wiki_title,
-        wp.slug as wiki_slug
+        wiki_link.wiki_page_id,
+        wiki_link.wiki_title,
+        wiki_link.wiki_slug
       from captures c
       left join lateral (
         select status, current_step, error_message, created_at
@@ -90,8 +80,16 @@ async function loadCaptureResults(userId: string, view: InboxView, limit = CAPTU
         limit 1
       ) pj on true
       left join sources s on s.capture_id = c.id
-      left join source_wiki_pages swp on swp.source_id = s.id
-      left join wiki_pages wp on wp.id = swp.wiki_page_id
+      left join lateral (
+        select wp.id as wiki_page_id, wp.title as wiki_title, wp.slug as wiki_slug
+        from source_wiki_pages swp
+        join wiki_pages wp on wp.id = swp.wiki_page_id
+        where swp.source_id = s.id
+          and wp.user_id = c.user_id
+          and swp.relation_type <> 'restored_from_merge'
+        order by swp.created_at desc
+        limit 1
+      ) wiki_link on true
       where c.user_id = $1
         and ${filters.sql}
       order by c.created_at desc
@@ -109,21 +107,16 @@ async function loadInboxStats(userId: string) {
     `
       select
         count(*)::text as "allCount",
-        count(*) filter (
-          where c.status <> 'ignored'
-            and not ${LOW_SIGNAL_CAPTURE_SQL}
-        )::text as "defaultCount",
+        count(*) filter (where c.status <> 'ignored')::text as "defaultCount",
         count(*) filter (
           where c.status <> 'ignored'
             and c.created_at >= $2
             and c.created_at < $3
-            and not ${LOW_SIGNAL_CAPTURE_SQL}
         )::text as "todayCount",
         count(*) filter (
           where c.status <> 'ignored'
             and c.created_at >= $2
             and c.created_at < $3
-            and not ${LOW_SIGNAL_CAPTURE_SQL}
             and (
               c.status in ('queued', 'processing')
               or pj.status in ('queued', 'running')
@@ -131,7 +124,6 @@ async function loadInboxStats(userId: string) {
         )::text as "activeTodayCount",
         count(*) filter (
           where c.status <> 'ignored'
-            and not ${LOW_SIGNAL_CAPTURE_SQL}
             and (
               c.status = 'failed'
               or pj.status = 'failed'
@@ -139,13 +131,8 @@ async function loadInboxStats(userId: string) {
         )::text as "failedCount",
         count(*) filter (
           where c.status <> 'ignored'
-            and not ${LOW_SIGNAL_CAPTURE_SQL}
             and (c.note is null or btrim(c.note) = '')
         )::text as "missingNoteCount",
-        count(*) filter (
-          where c.status <> 'ignored'
-            and ${LOW_SIGNAL_CAPTURE_SQL}
-        )::text as "lowSignalCount",
         count(*) filter (where c.status = 'ignored')::text as "ignoredCount"
       from captures c
       left join lateral (
@@ -156,8 +143,6 @@ async function loadInboxStats(userId: string) {
         limit 1
       ) pj on true
       left join sources s on s.capture_id = c.id
-      left join source_wiki_pages swp on swp.source_id = s.id
-      left join wiki_pages wp on wp.id = swp.wiki_page_id
       where c.user_id = $1
     `,
     [userId, todayRange.start, todayRange.end],
@@ -170,7 +155,6 @@ async function loadInboxStats(userId: string) {
     defaultCount: Number(row?.defaultCount || 0),
     failedCount: Number(row?.failedCount || 0),
     ignoredCount: Number(row?.ignoredCount || 0),
-    lowSignalCount: Number(row?.lowSignalCount || 0),
     missingNoteCount: Number(row?.missingNoteCount || 0),
     todayCount: Number(row?.todayCount || 0),
   } satisfies InboxStats;
@@ -442,12 +426,6 @@ function DailyReviewPanel({
           label={localeText(locale, "已忽略", "Ignored")}
           view="ignored"
         />
-        <TriageCard
-          activeView={activeView}
-          count={stats.lowSignalCount}
-          label={localeText(locale, "测试资料", "Tests")}
-          view="low-signal"
-        />
         <Link className={activeView === "all" ? "triage-card is-active" : "triage-card"} href="/inbox" scroll={false}>
           <span>{localeText(locale, "全部最近", "All recent")}</span>
           <strong>{stats.defaultCount}</strong>
@@ -645,8 +623,7 @@ function parseInboxView(value: string | undefined): InboxView {
     value === "active" ||
     value === "failed" ||
     value === "needs-note" ||
-    value === "ignored" ||
-    value === "low-signal"
+    value === "ignored"
   ) {
     return value;
   }
@@ -686,7 +663,6 @@ function createEmptyInboxStats(): InboxStats {
     defaultCount: 0,
     failedCount: 0,
     ignoredCount: 0,
-    lowSignalCount: 0,
     missingNoteCount: 0,
     todayCount: 0,
   };
@@ -696,7 +672,7 @@ function getCaptureViewSqlFilter(view: InboxView) {
   if (view === "today") {
     return {
       params: ["$todayStart", "$todayEnd"],
-      sql: `c.status <> 'ignored' and c.created_at >= $2 and c.created_at < $3 and not ${LOW_SIGNAL_CAPTURE_SQL}`,
+      sql: "c.status <> 'ignored' and c.created_at >= $2 and c.created_at < $3",
     };
   }
 
@@ -707,7 +683,6 @@ function getCaptureViewSqlFilter(view: InboxView) {
         c.status <> 'ignored'
         and c.created_at >= $2
         and c.created_at < $3
-        and not ${LOW_SIGNAL_CAPTURE_SQL}
         and (
           c.status in ('queued', 'processing')
           or pj.status in ('queued', 'running')
@@ -719,14 +694,14 @@ function getCaptureViewSqlFilter(view: InboxView) {
   if (view === "failed") {
     return {
       params: [],
-      sql: `c.status <> 'ignored' and not ${LOW_SIGNAL_CAPTURE_SQL} and (c.status = 'failed' or pj.status = 'failed')`,
+      sql: "c.status <> 'ignored' and (c.status = 'failed' or pj.status = 'failed')",
     };
   }
 
   if (view === "needs-note") {
     return {
       params: [],
-      sql: `c.status <> 'ignored' and not ${LOW_SIGNAL_CAPTURE_SQL} and (c.note is null or btrim(c.note) = '')`,
+      sql: "c.status <> 'ignored' and (c.note is null or btrim(c.note) = '')",
     };
   }
 
@@ -737,16 +712,9 @@ function getCaptureViewSqlFilter(view: InboxView) {
     };
   }
 
-  if (view === "low-signal") {
-    return {
-      params: [],
-      sql: `c.status <> 'ignored' and ${LOW_SIGNAL_CAPTURE_SQL}`,
-    };
-  }
-
   return {
     params: [],
-    sql: `c.status <> 'ignored' and not ${LOW_SIGNAL_CAPTURE_SQL}`,
+    sql: "c.status <> 'ignored'",
   };
 }
 
@@ -768,7 +736,6 @@ function getInboxViewTotal(view: InboxView, stats: InboxStats) {
     all: stats.defaultCount,
     failed: stats.failedCount,
     ignored: stats.ignoredCount,
-    "low-signal": stats.lowSignalCount,
     "needs-note": stats.missingNoteCount,
     today: stats.todayCount,
   };
@@ -816,21 +783,11 @@ function filterCapturesByView(captures: CaptureResultRow[], view: InboxView) {
     return captures.filter((capture) => capture.status === "ignored");
   }
 
-  if (view === "low-signal") {
-    return captures.filter((capture) => isDefaultInboxCapture(capture) && isLowSignalCapture(capture));
-  }
-
-  return captures.filter((capture) => isDefaultInboxCapture(capture) && !isLowSignalCapture(capture));
+  return captures.filter(isDefaultInboxCapture);
 }
 
 function isDefaultInboxCapture(capture: CaptureResultRow) {
   return capture.status !== "ignored";
-}
-
-function isLowSignalCapture(capture: CaptureResultRow) {
-  return [capture.raw_text, capture.raw_url, capture.source_title, capture.wiki_title].some((value) =>
-    /\b(P\d+|SMOKE|TEST|REVIEW|REGRESSION)\b/i.test(value || ""),
-  );
 }
 
 function getInboxViewLabel(view: InboxView, locale: Locale) {
@@ -841,7 +798,6 @@ function getInboxViewLabel(view: InboxView, locale: Locale) {
     failed: localeText(locale, "失败待处理", "Failed captures"),
     "needs-note": localeText(locale, "待补备注", "Needs note"),
     ignored: localeText(locale, "已忽略", "Ignored"),
-    "low-signal": localeText(locale, "测试资料", "Test captures"),
   };
 
   return labels[view];
@@ -855,7 +811,6 @@ function getEmptyViewText(view: InboxView, locale: Locale) {
     failed: localeText(locale, "没有失败资料", "No failed captures"),
     "needs-note": localeText(locale, "没有待补备注", "No missing notes"),
     ignored: localeText(locale, "没有已忽略资料", "No ignored captures"),
-    "low-signal": localeText(locale, "没有测试资料", "No test captures"),
   };
 
   return labels[view];

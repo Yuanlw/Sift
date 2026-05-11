@@ -56,13 +56,12 @@ export async function refreshKnowledgeRecommendationsForProcessedCapture(input: 
   const candidates = await loadRecommendationCandidates(input.userId);
   const trigger = candidates.find((candidate) => candidate.id === input.source.id);
 
-  if (!trigger || isLowSignalTitle(trigger.title)) {
+  if (!trigger) {
     return;
   }
 
   const triggerTokens = contentTokens(toRecommendationText(trigger));
   const drafts = candidates
-    .filter((candidate) => !isLowSignalTitle(candidate.title))
     .map((candidate) => scoreCandidate(trigger, triggerTokens, candidate))
     .filter((draft): draft is RecommendationDraft => Boolean(draft))
     .sort((left, right) => right.score - left.score)
@@ -95,10 +94,11 @@ export async function loadKnowledgeRecommendations(input: {
         join sources s on s.id = kr.source_id
         left join captures c on c.id = s.capture_id
         left join sources ts on ts.id = kr.trigger_source_id
+        left join captures tc on tc.id = ts.capture_id
         where kr.user_id = $1
           and kr.status = 'active'
           and (c.status is null or c.status <> 'ignored')
-          and s.title !~* '(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)'
+          and (ts.id is null or tc.status is null or tc.status <> 'ignored')
         order by s.id, kr.updated_at desc, kr.score desc
       )
       select *
@@ -244,10 +244,6 @@ function toRecommendationText(source: SourceCandidate) {
 function getRecencyScore(value: string) {
   const ageDays = Math.max(0, (Date.now() - new Date(value).getTime()) / 86_400_000);
   return Math.max(0, 1 - ageDays / 30);
-}
-
-function isLowSignalTitle(value: string) {
-  return /\b(P\d+|SMOKE|TEST|REVIEW|REGRESSION)\b/i.test(value);
 }
 
 function contentTokens(value: string) {

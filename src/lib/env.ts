@@ -39,6 +39,18 @@ const serverEnvSchema = z.object({
     .transform((value) => value === "true"),
   SIFT_SESSION_SECRET: z.string().min(32).optional(),
   SIFT_APP_URL: z.string().url().default("http://localhost:3000"),
+  SIFT_MODEL_GATEWAY_BASE_URL: z.string().url().optional(),
+  SIFT_MODEL_GATEWAY_API_KEY: z.string().min(1).optional(),
+  SIFT_CLOUD_CONTROL_API_KEY: z.string().min(1).optional(),
+  SIFT_SMART_QUOTA_USD_PER_CREDIT: z.coerce.number().positive().default(0.0001),
+  SIFT_SMART_QUOTA_COST_MULTIPLIER: z.coerce.number().min(1).default(2),
+  SIFT_COST_TEXT_INPUT_USD_PER_MILLION_TOKENS: z.coerce.number().min(0).default(0.029),
+  SIFT_COST_TEXT_OUTPUT_USD_PER_MILLION_TOKENS: z.coerce.number().min(0).default(0.287),
+  SIFT_COST_EMBEDDING_INPUT_USD_PER_MILLION_TOKENS: z.coerce.number().min(0).default(0.072),
+  SIFT_COST_VISION_INPUT_USD_PER_MILLION_TOKENS: z.coerce.number().min(0).default(0.043),
+  SIFT_COST_VISION_OUTPUT_USD_PER_MILLION_TOKENS: z.coerce.number().min(0).default(0.072),
+  SIFT_COST_VISION_IMAGE_USD: z.coerce.number().min(0).default(0.002),
+  SIFT_ADMIN_EMAILS: z.string().min(1).optional(),
   SIFT_MODEL_KEY_ENCRYPTION_SECRET: z.string().min(32).optional(),
   SIFT_PRICE_LABEL_PERSONAL: z.string().min(1).optional(),
   SIFT_PRICE_LABEL_PRO: z.string().min(1).optional(),
@@ -63,6 +75,18 @@ const optionalEnvKeys = [
   "SIFT_AGENT_API_KEY",
   "SIFT_AGENT_USER_ID",
   "SIFT_SESSION_SECRET",
+  "SIFT_MODEL_GATEWAY_BASE_URL",
+  "SIFT_MODEL_GATEWAY_API_KEY",
+  "SIFT_CLOUD_CONTROL_API_KEY",
+  "SIFT_SMART_QUOTA_USD_PER_CREDIT",
+  "SIFT_SMART_QUOTA_COST_MULTIPLIER",
+  "SIFT_COST_TEXT_INPUT_USD_PER_MILLION_TOKENS",
+  "SIFT_COST_TEXT_OUTPUT_USD_PER_MILLION_TOKENS",
+  "SIFT_COST_EMBEDDING_INPUT_USD_PER_MILLION_TOKENS",
+  "SIFT_COST_VISION_INPUT_USD_PER_MILLION_TOKENS",
+  "SIFT_COST_VISION_OUTPUT_USD_PER_MILLION_TOKENS",
+  "SIFT_COST_VISION_IMAGE_USD",
+  "SIFT_ADMIN_EMAILS",
   "SIFT_MODEL_KEY_ENCRYPTION_SECRET",
   "SIFT_PRICE_LABEL_PERSONAL",
   "SIFT_PRICE_LABEL_PRO",
@@ -109,6 +133,18 @@ export function getServerEnv() {
     SIFT_ALLOW_PUBLIC_SIGNUP: process.env.SIFT_ALLOW_PUBLIC_SIGNUP,
     SIFT_SESSION_SECRET: process.env.SIFT_SESSION_SECRET,
     SIFT_APP_URL: process.env.SIFT_APP_URL,
+    SIFT_MODEL_GATEWAY_BASE_URL: process.env.SIFT_MODEL_GATEWAY_BASE_URL,
+    SIFT_MODEL_GATEWAY_API_KEY: process.env.SIFT_MODEL_GATEWAY_API_KEY,
+    SIFT_CLOUD_CONTROL_API_KEY: process.env.SIFT_CLOUD_CONTROL_API_KEY,
+    SIFT_SMART_QUOTA_USD_PER_CREDIT: process.env.SIFT_SMART_QUOTA_USD_PER_CREDIT,
+    SIFT_SMART_QUOTA_COST_MULTIPLIER: process.env.SIFT_SMART_QUOTA_COST_MULTIPLIER,
+    SIFT_COST_TEXT_INPUT_USD_PER_MILLION_TOKENS: process.env.SIFT_COST_TEXT_INPUT_USD_PER_MILLION_TOKENS,
+    SIFT_COST_TEXT_OUTPUT_USD_PER_MILLION_TOKENS: process.env.SIFT_COST_TEXT_OUTPUT_USD_PER_MILLION_TOKENS,
+    SIFT_COST_EMBEDDING_INPUT_USD_PER_MILLION_TOKENS: process.env.SIFT_COST_EMBEDDING_INPUT_USD_PER_MILLION_TOKENS,
+    SIFT_COST_VISION_INPUT_USD_PER_MILLION_TOKENS: process.env.SIFT_COST_VISION_INPUT_USD_PER_MILLION_TOKENS,
+    SIFT_COST_VISION_OUTPUT_USD_PER_MILLION_TOKENS: process.env.SIFT_COST_VISION_OUTPUT_USD_PER_MILLION_TOKENS,
+    SIFT_COST_VISION_IMAGE_USD: process.env.SIFT_COST_VISION_IMAGE_USD,
+    SIFT_ADMIN_EMAILS: process.env.SIFT_ADMIN_EMAILS,
     SIFT_MODEL_KEY_ENCRYPTION_SECRET: process.env.SIFT_MODEL_KEY_ENCRYPTION_SECRET,
     SIFT_PRICE_LABEL_PERSONAL: process.env.SIFT_PRICE_LABEL_PERSONAL,
     SIFT_PRICE_LABEL_PRO: process.env.SIFT_PRICE_LABEL_PRO,
@@ -127,15 +163,33 @@ export function getServerEnv() {
     );
   }
 
+  const gatewayBaseUrl = result.data.SIFT_MODEL_GATEWAY_BASE_URL;
+  const gatewayApiKey = result.data.SIFT_MODEL_GATEWAY_API_KEY;
+
+  if (Boolean(gatewayBaseUrl) !== Boolean(gatewayApiKey)) {
+    throw new MissingEnvError([
+      gatewayBaseUrl ? "SIFT_MODEL_GATEWAY_API_KEY" : "SIFT_MODEL_GATEWAY_BASE_URL",
+    ]);
+  }
+
+  const gatewayConfigured = Boolean(gatewayBaseUrl && gatewayApiKey);
+  const defaultModelBaseUrl = gatewayConfigured ? gatewayBaseUrl! : result.data.MODEL_BASE_URL;
+  const defaultModelApiKey = gatewayConfigured ? gatewayApiKey! : result.data.MODEL_API_KEY;
+  const textBaseUrl = result.data.MODEL_TEXT_BASE_URL || defaultModelBaseUrl;
+  const textApiKey = result.data.MODEL_TEXT_API_KEY || defaultModelApiKey;
+
   return {
     ...result.data,
-    MODEL_TEXT_BASE_URL: result.data.MODEL_TEXT_BASE_URL || result.data.MODEL_BASE_URL,
-    MODEL_TEXT_API_KEY: result.data.MODEL_TEXT_API_KEY || result.data.MODEL_API_KEY,
-    MODEL_EMBEDDING_BASE_URL: result.data.MODEL_EMBEDDING_BASE_URL || result.data.MODEL_BASE_URL,
-    MODEL_EMBEDDING_API_KEY: result.data.MODEL_EMBEDDING_API_KEY || result.data.MODEL_API_KEY,
-    MODEL_VISION_BASE_URL: result.data.MODEL_VISION_BASE_URL || result.data.MODEL_TEXT_BASE_URL || result.data.MODEL_BASE_URL,
-    MODEL_VISION_API_KEY: result.data.MODEL_VISION_API_KEY || result.data.MODEL_TEXT_API_KEY || result.data.MODEL_API_KEY,
+    MODEL_BASE_URL: defaultModelBaseUrl,
+    MODEL_API_KEY: defaultModelApiKey,
+    MODEL_TEXT_BASE_URL: textBaseUrl,
+    MODEL_TEXT_API_KEY: textApiKey,
+    MODEL_EMBEDDING_BASE_URL: result.data.MODEL_EMBEDDING_BASE_URL || defaultModelBaseUrl,
+    MODEL_EMBEDDING_API_KEY: result.data.MODEL_EMBEDDING_API_KEY || defaultModelApiKey,
+    MODEL_VISION_BASE_URL: result.data.MODEL_VISION_BASE_URL || textBaseUrl,
+    MODEL_VISION_API_KEY: result.data.MODEL_VISION_API_KEY || textApiKey,
     MODEL_VISION_MODEL: result.data.MODEL_VISION_MODEL || result.data.MODEL_TEXT_MODEL,
+    SIFT_MODEL_GATEWAY_CONFIGURED: gatewayConfigured,
   };
 }
 

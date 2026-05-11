@@ -201,13 +201,9 @@ async function toVisionImageContent(attachment: RawAttachment): Promise<VisionCo
 }
 
 async function toVisionImageUrl(attachment: RawAttachment) {
-  if (attachment.storage === "local") {
-    const filename = getFilenameFromCaptureUploadUrl(attachment.url);
+  const filename = getFilenameFromCaptureUploadUrl(attachment.url);
 
-    if (!filename) {
-      throw new Error(`Unsupported local image URL: ${attachment.url}`);
-    }
-
+  if (filename) {
     const bytes = await readCaptureUpload(filename);
     const mimeType = attachment.mime_type || getMimeTypeFromCaptureUploadFilename(filename);
     return `data:${mimeType};base64,${bytes.toString("base64")}`;

@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { query } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
 import { answerKnowledgeBaseQuestion } from "@/lib/models";
+import { recordProductEvent } from "@/lib/product-events";
 import { validateSameOriginRequest } from "@/lib/request-security";
 import { retrieveHybridContexts, toLabeledContexts, type RetrievedContext } from "@/lib/sift-query";
 import { SmartQuotaExceededError } from "@/lib/smart-quota";
@@ -52,6 +53,16 @@ export async function POST(request: Request) {
         metadata: {
           context_count: 0,
         },
+      });
+      await recordProductEvent({
+        eventName: "ask.global",
+        metadata: {
+          citation_count: 0,
+          context_count: 0,
+        },
+        resourceType: "knowledge_base",
+        source: "ask",
+        userId: userContext.userId,
       });
       return NextResponse.json({
         ...emptyAnswer,
@@ -133,6 +144,16 @@ export async function POST(request: Request) {
         citation_count: answer.citations.length,
         graph_expanded_count: contexts.filter((context) => context.graphScore > 0).length,
       },
+    });
+    await recordProductEvent({
+      eventName: "ask.global",
+      metadata: {
+        citation_count: answer.citations.length,
+        context_count: contexts.length,
+      },
+      resourceType: "knowledge_base",
+      source: "ask",
+      userId: userContext.userId,
     });
 
     return NextResponse.json({

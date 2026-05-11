@@ -1,6 +1,7 @@
 import { inngest } from "@/lib/inngest/client";
 import { query } from "@/lib/db";
 import { processCaptureById } from "@/lib/processing/process-capture";
+import { recordProductEvent } from "@/lib/product-events";
 import { isRemoteImageUrl } from "@/lib/upload-storage";
 import type { Capture, CaptureType, Json, ProcessingJob, RawAttachment } from "@/types/database";
 
@@ -85,6 +86,20 @@ export async function createCapture(input: CreateCaptureInput, options: CreateCa
     ],
   );
   const capture = captureResult.rows[0];
+  await recordProductEvent({
+    eventName: "capture.created",
+    metadata: {
+      attachment_count: attachments.length,
+      dispatcher: options.dispatcher,
+      input_kinds: inputKinds,
+      source_app: input.sourceApp,
+      type,
+    },
+    resourceId: capture.id,
+    resourceType: "capture",
+    source: input.sourceApp,
+    userId: options.userId,
+  });
 
   const jobResult = await query<ProcessingJob>(
     `

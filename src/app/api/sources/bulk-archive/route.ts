@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
 import { query, transaction } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
-import { deleteArchivedSources } from "@/lib/permanent-delete";
+import { deleteSourcesCascade } from "@/lib/permanent-delete";
 import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
@@ -54,9 +54,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No sources found." }, { status: 404 });
     }
 
-    const targetRows = parsed.action === "delete"
-      ? sources.rows.filter((source) => source.capture_status === "ignored")
-      : sources.rows;
+    const targetRows = sources.rows;
     const sourceIds = targetRows.map((source) => source.id);
     const captureIds = targetRows.map((source) => source.capture_id);
 
@@ -71,7 +69,7 @@ export async function POST(request: Request) {
           requested_count: parsed.ids.length,
         },
       });
-      return NextResponse.json({ error: "只能永久删除已归档来源。" }, { status: 409 });
+      return NextResponse.json({ error: "No sources found." }, { status: 404 });
     }
 
     if (parsed.action === "archive") {
@@ -80,7 +78,7 @@ export async function POST(request: Request) {
       await restoreSources(userContext.userId, captureIds);
     } else {
       await transaction((client) =>
-        deleteArchivedSources(client, {
+        deleteSourcesCascade(client, {
           captureIds,
           sourceIds,
           userId: userContext.userId,
@@ -246,5 +244,5 @@ function getResultMessage(action: BulkSourceAction) {
     return "已恢复所选来源。";
   }
 
-  return "已永久删除所选来源，并清理相关检索片段。";
+  return "已永久删除所选来源，并清理关联知识页和检索片段。";
 }

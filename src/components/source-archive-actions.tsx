@@ -15,7 +15,7 @@ const copy = {
     archived: "已归档，默认列表不再显示。",
     restored: "已恢复到默认列表。",
     deleted: "已永久删除来源资料。",
-    confirmDelete: "永久删除后不可恢复。确定删除这条来源吗？",
+    confirmDelete: "永久删除后不可恢复，会同步清理由它生成且没有其他来源支撑的知识页。确定删除这条来源吗？",
     failed: "操作失败。",
   },
   en: {
@@ -28,7 +28,7 @@ const copy = {
     archived: "Archived and hidden from the default list.",
     restored: "Restored to the default list.",
     deleted: "Source permanently deleted.",
-    confirmDelete: "Permanent deletion cannot be undone. Delete this source?",
+    confirmDelete: "Permanent deletion cannot be undone. It also removes wiki pages generated only from this source. Delete this source?",
     failed: "Action failed.",
   },
 } satisfies Record<Locale, Record<string, string>>;
@@ -82,7 +82,7 @@ export function SourceArchiveActions({
   }
 
   async function runDelete() {
-    if (pending || deleting || !isArchived) {
+    if (pending || deleting) {
       return;
     }
 
@@ -124,16 +124,14 @@ export function SourceArchiveActions({
       >
         {pending ? (isArchived ? t.restoring : t.archiving) : isArchived ? t.restore : t.archive}
       </button>
-      {isArchived ? (
-        <button
-          className="button button-danger"
-          disabled={pending || deleting}
-          onClick={() => void runDelete()}
-          type="button"
-        >
-          {deleting ? t.deleting : t.delete}
-        </button>
-      ) : null}
+      <button
+        className="button button-danger"
+        disabled={pending || deleting}
+        onClick={() => void runDelete()}
+        type="button"
+      >
+        {deleting ? t.deleting : t.delete}
+      </button>
       {status ? <p className="meta">{status}</p> : null}
     </div>
   );

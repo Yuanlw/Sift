@@ -48,11 +48,27 @@ const copy = {
 } satisfies Record<Locale, Record<string, string>>;
 
 export function CaptureForm({ locale = "zh" }: { locale?: Locale }) {
+  return <CaptureFormContent locale={locale} />;
+}
+
+export function CaptureFormContent({
+  initialContent = "",
+  initialNote = "",
+  locale = "zh",
+  redirectTo,
+  sourceApp = "web_capture",
+}: {
+  initialContent?: string;
+  initialNote?: string;
+  locale?: Locale;
+  redirectTo?: string;
+  sourceApp?: string;
+}) {
   const router = useRouter();
   const t = copy[locale];
   const [status, setStatus] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [content, setContent] = useState("");
+  const [content, setContent] = useState(initialContent);
   const [fileCount, setFileCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const detectedKinds = useMemo(() => getDetectedKinds(content, fileCount), [content, fileCount]);
@@ -75,6 +91,7 @@ export function CaptureForm({ locale = "zh" }: { locale?: Locale }) {
     formData.set("text", parsed.text || "");
     formData.set("note", normalizeFormText(formData.get("note")) || "");
     formData.set("fileUrl", "");
+    formData.set("sourceApp", sourceApp);
 
     try {
       const response = await fetch("/api/captures", {
@@ -99,6 +116,10 @@ export function CaptureForm({ locale = "zh" }: { locale?: Locale }) {
         fileInputRef.current.value = "";
       }
       setStatus(result.job?.message || t.saved);
+      if (redirectTo) {
+        router.push(redirectTo);
+        return;
+      }
       router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t.failed);
@@ -125,7 +146,7 @@ export function CaptureForm({ locale = "zh" }: { locale?: Locale }) {
       <div className="composer-footer">
         <label className="composer-note" htmlFor="capture-note">
           <span>{t.noteLabel}</span>
-          <input id="capture-note" name="note" placeholder={t.notePlaceholder} type="text" />
+          <input defaultValue={initialNote} id="capture-note" name="note" placeholder={t.notePlaceholder} type="text" />
         </label>
 
         <div className="composer-tools">

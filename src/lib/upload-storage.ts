@@ -4,11 +4,13 @@ import path from "path";
 import type { RawAttachment } from "@/types/database";
 
 export const CAPTURE_UPLOAD_URL_PREFIX = "/api/uploads/captures/";
+export const LEGACY_CAPTURE_UPLOAD_URL_PREFIX = "/uploads/captures/";
 export const MAX_CAPTURE_FILES = 6;
 export const MAX_CAPTURE_IMPORT_FILES = 60;
 export const MAX_CAPTURE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 const CAPTURE_UPLOAD_DIR = path.join(process.cwd(), ".data", "uploads", "captures");
+const LEGACY_CAPTURE_UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "captures");
 const CAPTURE_IMAGE_MIME_TYPES: Record<string, string> = {
   "image/jpeg": ".jpg",
   "image/png": ".png",
@@ -71,7 +73,15 @@ export async function saveCaptureUploads(values: FormDataEntryValue[], options: 
 }
 
 export async function readCaptureUpload(filename: string) {
-  return readFile(getCaptureUploadPath(filename));
+  try {
+    return await readFile(getCaptureUploadPath(filename));
+  } catch (error) {
+    if (!isFileNotFoundError(error)) {
+      throw error;
+    }
+
+    return readFile(getLegacyCaptureUploadPath(filename));
+  }
 }
 
 export function getCaptureUploadPath(filename: string) {
@@ -90,12 +100,25 @@ export function getCaptureUploadPath(filename: string) {
 }
 
 export function getFilenameFromCaptureUploadUrl(url: string) {
-  if (!url.startsWith(CAPTURE_UPLOAD_URL_PREFIX)) {
+  const prefix = getCaptureUploadUrlPrefix(url);
+
+  if (!prefix) {
     return null;
   }
 
-  const filename = decodeURIComponent(url.slice(CAPTURE_UPLOAD_URL_PREFIX.length));
+  const filename = decodeURIComponent(url.slice(prefix.length));
   return isSafeCaptureUploadFilename(filename) ? filename : null;
+}
+
+export function getCaptureUploadUrlVariants(filename: string) {
+  if (!isSafeCaptureUploadFilename(filename)) {
+    return [];
+  }
+
+  return [
+    `${CAPTURE_UPLOAD_URL_PREFIX}${filename}`,
+    `${LEGACY_CAPTURE_UPLOAD_URL_PREFIX}${filename}`,
+  ];
 }
 
 export function getMimeTypeFromCaptureUploadFilename(filename: string) {
@@ -110,4 +133,35 @@ export function isRemoteImageUrl(url: string) {
 
 function isSafeCaptureUploadFilename(filename: string) {
   return /^\d{4}-\d{2}-\d{2}-[0-9a-f-]{36}\.(jpg|png|webp|gif|bmp|avif)$/i.test(filename);
+}
+
+function getCaptureUploadUrlPrefix(url: string) {
+  if (url.startsWith(CAPTURE_UPLOAD_URL_PREFIX)) {
+    return CAPTURE_UPLOAD_URL_PREFIX;
+  }
+
+  if (url.startsWith(LEGACY_CAPTURE_UPLOAD_URL_PREFIX)) {
+    return LEGACY_CAPTURE_UPLOAD_URL_PREFIX;
+  }
+
+  return null;
+}
+
+function getLegacyCaptureUploadPath(filename: string) {
+  if (!isSafeCaptureUploadFilename(filename)) {
+    throw new UploadValidationError("Invalid upload filename.");
+  }
+
+  const filePath = path.resolve(LEGACY_CAPTURE_UPLOAD_DIR, filename);
+  const root = path.resolve(LEGACY_CAPTURE_UPLOAD_DIR);
+
+  if (!filePath.startsWith(`${root}${path.sep}`)) {
+    throw new UploadValidationError("Invalid upload path.");
+  }
+
+  return filePath;
+}
+
+function isFileNotFoundError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }

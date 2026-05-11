@@ -29,6 +29,7 @@ const createCaptureSchema = z
     text: textInput,
     note: textInput,
     fileUrl: textInput,
+    sourceApp: z.string().trim().min(1).max(80).optional().nullable(),
     attachments: z.array(attachmentSchema).default([]),
   })
   .refine((data) => Boolean(data.url || data.text || data.fileUrl || data.attachments.length > 0), {
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
       fileUrl: body.fileUrl,
       attachments: body.attachments,
       attachmentSource: parsedRequest.source,
-      sourceApp: parsedRequest.source,
+      sourceApp: normalizeSourceApp(body.sourceApp, parsedRequest.source),
     }, {
       dispatcher: env.JOB_DISPATCHER,
       userId: userContext.userId,
@@ -70,11 +71,11 @@ export async function POST(request: Request) {
         type: result.type,
         dispatcher: env.JOB_DISPATCHER,
         input_kinds: result.inputKinds,
+        source_app: normalizeSourceApp(body.sourceApp, parsedRequest.source),
         user_context_source: userContext.source,
         attachment_count: body.attachments.length,
       },
     });
-
     return NextResponse.json({
       capture: result.capture,
       job: {
@@ -132,7 +133,22 @@ async function parseCaptureRequest(request: Request) {
       text: formData.get("text"),
       note: formData.get("note"),
       fileUrl: formData.get("fileUrl"),
+      sourceApp: formData.get("sourceApp"),
       attachments: uploadedAttachments,
     },
   };
+}
+
+function normalizeSourceApp(value: string | null | undefined, fallback: "json" | "multipart") {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9:_-]/g, "_")
+    .slice(0, 80);
+
+  return normalized || fallback;
 }

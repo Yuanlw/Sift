@@ -27,7 +27,7 @@ const copy = {
     archived: "已归档所选来源。",
     restored: "已恢复所选来源。",
     deleted: "已永久删除所选来源。",
-    confirmDelete: "永久删除后不可恢复。确定删除所选来源吗？",
+    confirmDelete: "永久删除后不可恢复，会同步清理由所选来源独占的知识页。确定删除所选来源吗？",
     failed: "操作失败。",
   },
   en: {
@@ -42,7 +42,7 @@ const copy = {
     archived: "Selected sources archived.",
     restored: "Selected sources restored.",
     deleted: "Selected sources permanently deleted.",
-    confirmDelete: "Permanent deletion cannot be undone. Delete the selected sources?",
+    confirmDelete: "Permanent deletion cannot be undone. It also removes wiki pages only linked to the selected sources. Delete the selected sources?",
     failed: "Action failed.",
   },
 } satisfies Record<Locale, Record<string, string>>;
@@ -128,16 +128,14 @@ export function SourceManagementList({
         >
           {pending && pendingAction === mode ? (mode === "restore" ? t.restoring : t.archiving) : actionLabel}
         </button>
-        {mode === "restore" ? (
-          <button
-            className="button button-danger"
-            disabled={selectedIds.length === 0 || pending}
-            onClick={() => void runBulkAction("delete")}
-            type="button"
-          >
-            {pending && pendingAction === "delete" ? t.deleting : t.delete}
-          </button>
-        ) : null}
+        <button
+          className="button button-danger"
+          disabled={selectedIds.length === 0 || pending}
+          onClick={() => void runBulkAction("delete")}
+          type="button"
+        >
+          {pending && pendingAction === "delete" ? t.deleting : t.delete}
+        </button>
         {status ? <span className="meta">{status}</span> : null}
       </div>
       <div className="list">

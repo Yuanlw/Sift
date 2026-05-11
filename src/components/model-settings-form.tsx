@@ -99,7 +99,7 @@ export function ModelSettingsForm({
     const payload = getValidationPayload(target);
 
     if (!payload) {
-      setStatus(t("请先填写该模型的 Base URL、API Key 和 Model。", "Fill in Base URL, API key, and model first."));
+      setStatus(t("请先填写该模型的接口地址、API 密钥和模型名称。", "Fill in Base URL, API key, and model first."));
       return;
     }
 
@@ -157,7 +157,7 @@ export function ModelSettingsForm({
 
   function getTargetLabel(target: Target) {
     const labels: Record<Target, string> = {
-      embedding: t("Embedding", "Embedding"),
+      embedding: t("向量模型", "Embedding"),
       text: t("文本模型", "Text model"),
       vision: t("OCR 模型", "OCR model"),
     };
@@ -169,13 +169,13 @@ export function ModelSettingsForm({
       <div className="model-mode-selector" role="radiogroup" aria-label={t("模型模式", "Model mode")}>
         <label className={mode === "default" ? "is-selected" : ""}>
           <input checked={mode === "default"} name="model-mode" onChange={() => setMode("default")} type="radio" />
-          <strong>{t("使用 Sift 默认模型", "Use Sift default models")}</strong>
-          <span>{t("隐藏具体模型和供应商，只显示能力、额度和健康状态。", "Hide provider/model details; show capability, quota, and health only.")}</span>
+          <strong>{t("省心模式：使用 Sift 默认模型", "Hassle-free: use Sift default models")}</strong>
+          <span>{t("不需要配置 API 密钥；只显示能力、额度和健康状态。", "No API key setup; only capability, quota, and health are shown.")}</span>
         </label>
         <label className={mode === "custom" ? "is-selected" : ""}>
           <input checked={mode === "custom"} name="model-mode" onChange={() => setMode("custom")} type="radio" />
-          <strong>{t("使用自定义模型", "Use custom models")}</strong>
-          <span>{t("你提供模型网关、API Key 和模型名称；Sift 只保存配置并调用。", "You provide gateway, API key, and model names; Sift stores and calls them.")}</span>
+          <strong>{t("高级模式：本地模型 / 自带密钥", "Advanced: local models / BYOK")}</strong>
+          <span>{t("你提供本地网关、API 密钥或企业模型网关；Sift 只保存配置并调用。", "You provide a local gateway, API key, or company model gateway; Sift stores and calls them.")}</span>
         </label>
       </div>
 
@@ -199,9 +199,9 @@ export function ModelSettingsForm({
           <ModelConfigBlock
             apiKeyConfigured={keyConfigured.text}
             fields={[
-              { label: "Base URL", name: "textBaseUrl", value: form.textBaseUrl },
-              { label: "API Key", name: "textApiKey", secret: true, value: form.textApiKey },
-              { label: "Model", name: "textModel", value: form.textModel },
+              { label: t("接口地址", "Base URL"), name: "textBaseUrl", value: form.textBaseUrl },
+              { label: t("API 密钥", "API Key"), name: "textApiKey", secret: true, value: form.textApiKey },
+              { label: t("模型名称", "Model"), name: "textModel", value: form.textModel },
             ]}
             onChange={update}
             onValidate={() => validate("text")}
@@ -212,23 +212,23 @@ export function ModelSettingsForm({
           <ModelConfigBlock
             apiKeyConfigured={keyConfigured.embedding}
             fields={[
-              { label: "Base URL", name: "embeddingBaseUrl", value: form.embeddingBaseUrl },
-              { label: "API Key", name: "embeddingApiKey", secret: true, value: form.embeddingApiKey },
-              { label: "Model", name: "embeddingModel", value: form.embeddingModel },
-              { label: "Dimensions", name: "embeddingDimensions", value: form.embeddingDimensions },
+              { label: t("接口地址", "Base URL"), name: "embeddingBaseUrl", value: form.embeddingBaseUrl },
+              { label: t("API 密钥", "API Key"), name: "embeddingApiKey", secret: true, value: form.embeddingApiKey },
+              { label: t("模型名称", "Model"), name: "embeddingModel", value: form.embeddingModel },
+              { label: t("向量维度", "Dimensions"), name: "embeddingDimensions", value: form.embeddingDimensions },
             ]}
             onChange={update}
             onValidate={() => validate("embedding")}
             locale={locale}
-            title={t("Embedding 模型", "Embedding model")}
+            title={t("向量模型", "Embedding model")}
             validating={validating === "embedding"}
           />
           <ModelConfigBlock
             apiKeyConfigured={keyConfigured.vision}
             fields={[
-              { label: "Base URL", name: "visionBaseUrl", value: form.visionBaseUrl },
-              { label: "API Key", name: "visionApiKey", secret: true, value: form.visionApiKey },
-              { label: "Model", name: "visionModel", value: form.visionModel },
+              { label: t("接口地址", "Base URL"), name: "visionBaseUrl", value: form.visionBaseUrl },
+              { label: t("API 密钥", "API Key"), name: "visionApiKey", secret: true, value: form.visionApiKey },
+              { label: t("模型名称", "Model"), name: "visionModel", value: form.visionModel },
             ]}
             onChange={update}
             onValidate={() => validate("vision")}
@@ -274,14 +274,14 @@ function ModelConfigBlock({
     <div className="model-config-block">
       <div className="model-config-heading">
         <h3>{title}</h3>
-        <span>{apiKeyConfigured ? t("Key 已保存", "Key saved") : t("Key 未保存", "Key not saved")}</span>
+        <span>{apiKeyConfigured ? t("密钥已保存", "Key saved") : t("密钥未保存", "Key not saved")}</span>
       </div>
       {fields.map((field) => (
         <label className="model-config-field" key={field.name}>
           <span>{field.label}</span>
           <input
             onChange={(event) => onChange(field.name, event.target.value)}
-            placeholder={field.secret && apiKeyConfigured ? t("留空则保留已保存 Key", "Leave blank to keep saved key") : ""}
+            placeholder={field.secret && apiKeyConfigured ? t("留空则保留已保存密钥", "Leave blank to keep saved key") : ""}
             type={field.secret ? "password" : "text"}
             value={field.value}
           />

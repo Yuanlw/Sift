@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
 import { query, transaction } from "@/lib/db";
 import { MissingEnvError } from "@/lib/env";
-import { deleteArchivedWikiPages } from "@/lib/permanent-delete";
+import { deleteWikiPagesCascade } from "@/lib/permanent-delete";
 import { validateSameOriginRequest } from "@/lib/request-security";
 import { getUserContextFromRequest } from "@/lib/user-context";
 
@@ -53,9 +53,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No wiki pages found." }, { status: 404 });
     }
 
-    const targetRows = parsed.action === "delete"
-      ? pages.rows.filter((page) => page.status === "archived")
-      : pages.rows;
+    const targetRows = pages.rows;
     const slugs = targetRows.map((page) => page.slug);
     const wikiPageIds = targetRows.map((page) => page.id);
 
@@ -70,12 +68,12 @@ export async function POST(request: Request) {
           requested_count: parsed.slugs.length,
         },
       });
-      return NextResponse.json({ error: "只能永久删除已归档知识页。" }, { status: 409 });
+      return NextResponse.json({ error: "No wiki pages found." }, { status: 404 });
     }
 
     if (parsed.action === "delete") {
       await transaction((client) =>
-        deleteArchivedWikiPages(client, {
+        deleteWikiPagesCascade(client, {
           slugs,
           userId: userContext.userId,
           wikiPageIds,
@@ -197,5 +195,5 @@ function getResultMessage(action: BulkWikiAction) {
     return "已恢复所选知识页。";
   }
 
-  return "已永久删除所选知识页，并清理相关检索片段和历史问答。";
+  return "已永久删除所选知识页，并清理关联来源和检索片段。";
 }

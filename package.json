@@ -16,7 +16,10 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "smoke:agent": "node scripts/smoke-agent-api.mjs"
+    "smoke:agent": "node scripts/smoke-agent-api.mjs",
+    "acceptance:product": "node scripts/product-acceptance.mjs",
+    "preflight:trial": "node scripts/preflight-real-user.mjs",
+    "verify:release": "npm run typecheck && npm run lint && npm run build && npm run preflight:trial && npm run acceptance:product"
   },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",

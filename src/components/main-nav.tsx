@@ -7,17 +7,21 @@ type Locale = "zh" | "en";
 
 const navItems = [
   { href: "/", label: { zh: "首页", en: "Home" } },
+  { href: "/capture", label: { zh: "快存", en: "Capture" } },
   { href: "/inbox", label: { zh: "收集箱", en: "Inbox" } },
   { href: "/sources", label: { zh: "来源资料", en: "Sources" } },
   { href: "/wiki", label: { zh: "知识页", en: "Wiki" } },
 ] as const;
 
-export function MainNav({ locale }: { locale: Locale }) {
+const adminNavItem = { href: "/admin/account-support", label: { zh: "后台", en: "Admin" } } as const;
+
+export function MainNav({ locale, showAdmin = false }: { locale: Locale; showAdmin?: boolean }) {
   const pathname = usePathname() || "/";
+  const items = showAdmin ? [...navItems, adminNavItem] : navItems;
 
   return (
     <nav className="nav" aria-label={t(locale, "主导航", "Primary navigation")}>
-      {navItems.map((item) => {
+      {items.map((item) => {
         const active = isActivePath(pathname, item.href);
 
         return (

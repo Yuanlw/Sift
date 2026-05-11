@@ -1,0 +1,242 @@
+<svg width="1200" height="1440" viewBox="0 0 1200 1440" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="130%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#17324D" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="paper" x1="0" y1="0" x2="1200" y2="1440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FCFDFF"/>
+      <stop offset="0.55" stop-color="#F8FBF8"/>
+      <stop offset="1" stop-color="#FFF9F2"/>
+    </linearGradient>
+    <linearGradient id="blueWash" x1="38" y1="26" x2="1162" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F9FBFF"/>
+      <stop offset="1" stop-color="#F4F7FF"/>
+    </linearGradient>
+    <linearGradient id="greenWash" x1="38" y1="370" x2="1162" y2="660" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F9FFFA"/>
+      <stop offset="1" stop-color="#F6FFF8"/>
+    </linearGradient>
+    <linearGradient id="orangeWash" x1="38" y1="700" x2="1162" y2="1175" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFCF7"/>
+      <stop offset="1" stop-color="#FFF7EA"/>
+    </linearGradient>
+    <style>
+      .bg { fill: url(#paper); }
+      .title { font: 800 34px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; }
+      .section-title { font: 800 29px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; }
+      .card-title { font: 800 22px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; fill: #14213D; }
+      .card-sub { font: 600 16px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; fill: #2F3A4A; }
+      .body { font: 500 16px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; fill: #172033; }
+      .small { font: 600 14px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; fill: #233044; }
+      .tiny { font: 600 13px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; fill: #3A4657; }
+      .blue { stroke: #2E6DF6; }
+      .green { stroke: #25853A; }
+      .orange { stroke: #FF8A1D; }
+      .blueText { fill: #1557D6; }
+      .greenText { fill: #177331; }
+      .orangeText { fill: #F26B00; }
+      .muted { fill: #5E6A7C; }
+      .thin { stroke-width: 2.2; }
+      .mid { stroke-width: 3; }
+      .line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .node { fill: #FFFFFF; }
+      .dash { stroke-dasharray: 6 8; }
+    </style>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="9.5" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#2E6DF6"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="9.5" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#25853A"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="12" refX="9.5" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#FF8A1D"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1200" height="1440" rx="0"/>
+  <rect x="26" y="22" width="1148" height="1396" rx="18" fill="#FFFFFF" stroke="#E5EAF3" stroke-width="2" filter="url(#softShadow)"/>
+
+  <!-- Agent layer -->
+  <rect x="38" y="42" width="1124" height="325" rx="12" fill="url(#blueWash)" class="blue thin"/>
+  <text x="600" y="90" text-anchor="middle" class="title blueText">Agent 层</text>
+
+  <rect x="80" y="116" width="320" height="116" rx="9" class="node blue thin"/>
+  <rect x="114" y="142" width="76" height="70" rx="8" fill="#0C1724"/>
+  <path d="M142 160L160 176L142 192" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M166 195H182" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+  <text x="220" y="166" class="card-title">OpenClaw</text>
+  <text x="220" y="196" class="card-sub">本地/云端</text>
+
+  <rect x="440" y="116" width="320" height="116" rx="9" class="node blue thin"/>
+  <path d="M500 148L548 121L596 148V200L548 227L500 200Z" fill="#5E2DB9"/>
+  <path d="M528 153V195M568 153V195M528 174H568" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="620" y="166" class="card-title">Hermes</text>
+  <text x="620" y="196" class="card-sub">本地/云端</text>
+
+  <rect x="800" y="116" width="320" height="116" rx="9" class="node blue thin"/>
+  <circle cx="846" cy="174" r="7" fill="#15913A"/>
+  <circle cx="867" cy="174" r="7" fill="#15913A"/>
+  <circle cx="888" cy="174" r="7" fill="#15913A"/>
+  <text x="930" y="166" class="card-title">其他接入方式</text>
+  <text x="930" y="196" class="card-sub">各类 Agent</text>
+
+  <path d="M240 232V276H600V289" class="line blue mid" marker-end="url(#arrowBlue)"/>
+  <path d="M600 232V289" class="line blue mid" marker-end="url(#arrowBlue)"/>
+  <path d="M960 232V276H600V289" class="line blue mid" marker-end="url(#arrowBlue)"/>
+  <rect x="467" y="293" width="266" height="54" rx="7" fill="#FFFFFF" class="blue thin"/>
+  <text x="600" y="328" text-anchor="middle" class="section-title blueText">统一调用入口</text>
+
+  <path d="M600 347V390" class="line blue mid" marker-end="url(#arrowBlue)"/>
+
+  <!-- Gateway layer -->
+  <rect x="38" y="392" width="1124" height="285" rx="12" fill="url(#greenWash)" class="green thin"/>
+  <g transform="translate(470 414)">
+    <path d="M38 0L62 10V34C62 61 50 81 38 88C26 81 14 61 14 34V10L38 0Z" fill="#1F7D34"/>
+    <path d="M28 40L36 48L52 29" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="600" y="445" text-anchor="middle" class="section-title greenText">鉴权网关层</text>
+
+  <circle cx="84" cy="482" r="4" fill="#172033"/>
+  <text x="104" y="488" class="body">X-Cli-Agent-Token 人维度鉴权</text>
+  <circle cx="84" cy="540" r="4" fill="#172033"/>
+  <text x="104" y="546" class="body">实时权限校验（与业务系统一致）</text>
+  <circle cx="84" cy="598" r="4" fill="#172033"/>
+  <text x="104" y="604" class="body">全链路审计：谁 → Agent → 能力 → 结果</text>
+
+  <rect x="530" y="474" width="140" height="154" rx="8" class="node green thin"/>
+  <circle cx="600" cy="515" r="15" fill="#1F7D34"/>
+  <path d="M572 578C576 548 624 548 628 578" fill="#1F7D34"/>
+  <text x="600" y="608" text-anchor="middle" class="small">身份鉴权</text>
+
+  <rect x="690" y="474" width="140" height="154" rx="8" class="node green thin"/>
+  <circle cx="760" cy="518" r="21" fill="#1F7D34"/>
+  <circle cx="770" cy="510" r="6" fill="#FFFFFF"/>
+  <path d="M742 536L721 557" stroke="#1F7D34" stroke-width="12" stroke-linecap="round"/>
+  <text x="760" y="608" text-anchor="middle" class="small">权限校验</text>
+
+  <rect x="850" y="474" width="140" height="154" rx="8" class="node green thin"/>
+  <path d="M920 503L953 518V548C953 579 938 597 920 605C902 597 887 579 887 548V518L920 503Z" fill="#1F7D34"/>
+  <path d="M907 551L918 562L938 535" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="920" y="608" text-anchor="middle" class="small">策略控制</text>
+
+  <rect x="1010" y="474" width="110" height="154" rx="8" class="node green thin"/>
+  <path d="M1040 504H1080L1094 518V590H1040Z" fill="#1F7D34"/>
+  <path d="M1080 504V520H1094" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M1055 538H1080M1055 558H1080M1055 578H1074" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <text x="1065" y="608" text-anchor="middle" class="small">审计日志</text>
+
+  <path d="M600 677V719" class="line green mid" marker-end="url(#arrowGreen)"/>
+
+  <!-- Capability layer -->
+  <rect x="38" y="710" width="1124" height="480" rx="12" fill="url(#orangeWash)" class="orange thin"/>
+  <g transform="translate(450 732)">
+    <rect x="0" y="0" width="14" height="14" rx="3" fill="#FF8A1D"/>
+    <rect x="22" y="0" width="14" height="14" rx="3" fill="#FF8A1D"/>
+    <rect x="0" y="22" width="14" height="14" rx="3" fill="#FF8A1D"/>
+    <rect x="22" y="22" width="14" height="14" rx="3" fill="#FF8A1D"/>
+  </g>
+  <text x="600" y="764" text-anchor="middle" class="section-title orangeText">业务能力开放层</text>
+
+  <rect x="86" y="792" width="312" height="276" rx="9" class="node blue thin"/>
+  <g transform="translate(140 824)">
+    <circle cx="0" cy="48" r="10" fill="#1557D6"/>
+    <circle cx="60" cy="15" r="10" fill="#1557D6"/>
+    <circle cx="60" cy="82" r="10" fill="#1557D6"/>
+    <path d="M10 43L50 20M10 53L50 77" stroke="#1557D6" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <text x="220" y="844" class="card-title blueText">Skill 层</text>
+  <text x="220" y="876" class="card-sub">业务流编排</text>
+  <circle cx="124" cy="924" r="4" fill="#172033"/>
+  <text x="144" y="930" class="body">语义化描述</text>
+  <circle cx="124" cy="968" r="4" fill="#172033"/>
+  <text x="144" y="974" class="body">多步骤编排</text>
+  <circle cx="124" cy="1012" r="4" fill="#172033"/>
+  <text x="144" y="1018" class="body">Agent 优先调用</text>
+  <circle cx="124" cy="1056" r="4" fill="#172033"/>
+  <text x="144" y="1062" class="body">复杂业务场景封装</text>
+
+  <rect x="444" y="792" width="312" height="276" rx="9" class="node" stroke="#6B3CB6" stroke-width="2.2"/>
+  <rect x="488" y="824" width="72" height="48" rx="24" fill="#5E2DB9"/>
+  <text x="524" y="856" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="#FFFFFF">API</text>
+  <text x="592" y="844" class="card-title" fill="#5E2DB9">API 层</text>
+  <text x="592" y="876" class="card-sub">原子数据操作</text>
+  <circle cx="482" cy="924" r="4" fill="#172033"/>
+  <text x="502" y="930" class="body">RESTful API</text>
+  <circle cx="482" cy="968" r="4" fill="#172033"/>
+  <text x="502" y="974" class="body">OpenAPI Spec</text>
+  <circle cx="482" cy="1012" r="4" fill="#172033"/>
+  <text x="502" y="1018" class="body">精细 CRUD 操作</text>
+  <circle cx="482" cy="1056" r="4" fill="#172033"/>
+  <text x="502" y="1062" class="body">标准化数据接口</text>
+
+  <rect x="802" y="792" width="312" height="276" rx="9" class="node orange thin"/>
+  <rect x="846" y="824" width="72" height="58" rx="8" fill="#F26B00"/>
+  <path d="M865 842L882 856L865 870" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M886 871H904" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <text x="950" y="844" class="card-title orangeText">CLI 层</text>
+  <text x="950" y="876" class="card-sub">工具命令执行</text>
+  <circle cx="840" cy="924" r="4" fill="#172033"/>
+  <text x="860" y="930" class="body">HTTP 封装 CLI</text>
+  <circle cx="840" cy="968" r="4" fill="#172033"/>
+  <text x="860" y="974" class="body">批量/运维操作</text>
+  <circle cx="840" cy="1012" r="4" fill="#172033"/>
+  <text x="860" y="1018" class="body">存量工具复用</text>
+  <circle cx="840" cy="1056" r="4" fill="#172033"/>
+  <text x="860" y="1062" class="body">高效执行能力</text>
+
+  <rect x="214" y="1108" width="772" height="96" rx="8" fill="#FFFDF9" class="orange thin"/>
+  <rect x="480" y="1128" width="34" height="34" rx="5" fill="#FF8A1D"/>
+  <path d="M489 1137H505M489 1147H505M489 1157H505" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+  <text x="600" y="1158" text-anchor="middle" class="section-title orangeText">能力注册表</text>
+  <text x="600" y="1188" text-anchor="middle" class="small">能力元数据管理 / 分类 / 版本 / 依赖 / 权限 / 使用统计</text>
+
+  <path d="M242 1068V1108" class="line orange mid" marker-end="url(#arrowOrange)"/>
+  <path d="M600 1068V1108" class="line orange mid" marker-end="url(#arrowOrange)"/>
+  <path d="M958 1068V1108" class="line orange mid" marker-end="url(#arrowOrange)"/>
+  <path d="M600 1204V1248" class="line orange mid" marker-end="url(#arrowOrange)"/>
+
+  <!-- Business systems -->
+  <rect x="38" y="1234" width="1124" height="150" rx="12" fill="#F7FAFF" class="blue thin"/>
+  <rect x="500" y="1256" width="20" height="40" rx="4" fill="#1557D6"/>
+  <rect x="526" y="1268" width="20" height="28" rx="4" fill="#1557D6"/>
+  <path d="M506 1268H514M506 1278H514M506 1288H514M532 1279H540M532 1289H540" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <text x="625" y="1288" text-anchor="middle" class="section-title blueText">业务系统层</text>
+
+  <rect x="78" y="1314" width="184" height="52" rx="7" fill="#FFFFFF" class="blue thin"/>
+  <path d="M112 1329H132L140 1352H176" stroke="#1557D6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="145" cy="1359" r="5" fill="#1557D6"/>
+  <circle cx="171" cy="1359" r="5" fill="#1557D6"/>
+  <text x="198" y="1347" text-anchor="middle" class="small" fill="#1557D6">订单系统</text>
+
+  <rect x="292" y="1314" width="184" height="52" rx="7" fill="#FFFFFF" class="blue thin"/>
+  <circle cx="328" cy="1334" r="11" fill="#1557D6"/>
+  <path d="M308 1360C312 1342 344 1342 348 1360" fill="#1557D6"/>
+  <text x="404" y="1347" text-anchor="middle" class="small" fill="#1557D6">网页管理</text>
+
+  <rect x="506" y="1314" width="184" height="52" rx="7" fill="#FFFFFF" class="blue thin"/>
+  <circle cx="558" cy="1336" r="8" fill="#1557D6"/>
+  <circle cx="534" cy="1340" r="8" fill="#1557D6"/>
+  <circle cx="582" cy="1340" r="8" fill="#1557D6"/>
+  <path d="M520 1360C525 1347 543 1347 548 1360M544 1360C550 1344 566 1344 572 1360M568 1360C573 1347 591 1347 596 1360" fill="#1557D6"/>
+  <text x="626" y="1347" text-anchor="middle" class="small" fill="#1557D6">客户管理</text>
+
+  <rect x="720" y="1314" width="184" height="52" rx="7" fill="#FFFFFF" class="blue thin"/>
+  <path d="M756 1355V1339C756 1326 767 1317 780 1317C793 1317 804 1326 804 1339V1355" stroke="#1557D6" stroke-width="6" stroke-linecap="round"/>
+  <rect x="748" y="1342" width="13" height="19" rx="5" fill="#1557D6"/>
+  <rect x="799" y="1342" width="13" height="19" rx="5" fill="#1557D6"/>
+  <text x="840" y="1347" text-anchor="middle" class="small" fill="#1557D6">客服系统</text>
+
+  <rect x="934" y="1314" width="184" height="52" rx="7" fill="#FFFFFF" class="blue thin"/>
+  <circle cx="984" cy="1340" r="6" fill="#1557D6"/>
+  <circle cx="1008" cy="1340" r="6" fill="#1557D6"/>
+  <circle cx="1032" cy="1340" r="6" fill="#1557D6"/>
+  <text x="1084" y="1347" text-anchor="middle" class="small" fill="#1557D6">其他系统</text>
+
+  <!-- Legend -->
+  <path d="M246 1410H288" class="line blue mid"/>
+  <text x="302" y="1416" class="tiny">接入/调用链路</text>
+  <path d="M470 1410H512" class="line green mid"/>
+  <text x="526" y="1416" class="tiny">鉴权/安全链路</text>
+  <path d="M704 1410H746" class="line orange mid"/>
+  <text x="760" y="1416" class="tiny">能力注册链路</text>
+</svg>

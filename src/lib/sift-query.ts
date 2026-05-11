@@ -346,8 +346,12 @@ export async function loadAgentSource(userId: string, sourceId: string) {
       from sources s
       left join captures c on c.id = s.capture_id
       left join source_wiki_pages swp on swp.source_id = s.id
+        and swp.relation_type <> 'restored_from_merge'
       left join wiki_pages wp on wp.id = swp.wiki_page_id
-      where s.id = $1 and s.user_id = $2
+        and wp.status <> 'archived'
+      where s.id = $1
+        and s.user_id = $2
+        and (c.status is null or c.status <> 'ignored')
       order by wp.updated_at desc
     `,
     [sourceId, userId],
@@ -403,8 +407,13 @@ export async function loadAgentWikiPage(userId: string, slug: string) {
         swp.confidence
       from wiki_pages wp
       left join source_wiki_pages swp on swp.wiki_page_id = wp.id
+        and swp.relation_type <> 'restored_from_merge'
       left join sources s on s.id = swp.source_id
-      where wp.slug = $1 and wp.user_id = $2
+      left join captures c on c.id = s.capture_id
+      where wp.slug = $1
+        and wp.user_id = $2
+        and wp.status <> 'archived'
+        and (s.id is null or c.status is null or c.status <> 'ignored')
       order by s.created_at desc
     `,
     [slug, userId],
@@ -449,7 +458,9 @@ export async function listAgentResources(userId: string, limit = 20) {
           s.summary,
           s.created_at as updated_at
         from sources s
+        left join captures c on c.id = s.capture_id
         where s.user_id = $1
+          and (c.status is null or c.status <> 'ignored')
         order by s.created_at desc
         limit $2
       )
@@ -464,6 +475,7 @@ export async function listAgentResources(userId: string, limit = 20) {
           wp.updated_at
         from wiki_pages wp
         where wp.user_id = $1
+          and wp.status <> 'archived'
         order by wp.updated_at desc
         limit $2
       )
@@ -549,19 +561,44 @@ async function retrieveVectorChunks(
         null::text[] as graph_path,
         null::real as graph_weight,
         null::real as keyword_rank,
-        case when c.parent_type = 'source' then s.id else ws.id end as source_id,
-        case when c.parent_type = 'source' then s.title else ws.title end as source_title,
-        case when c.parent_type = 'source' then s.original_url else ws.original_url end as original_url,
-        case when c.parent_type = 'wiki_page' then wp.slug else wps.slug end as wiki_slug,
-        case when c.parent_type = 'wiki_page' then wp.title else wps.title end as wiki_title
+        case when c.parent_type = 'source' then s.id else wiki_source.source_id end as source_id,
+        case when c.parent_type = 'source' then s.title else wiki_source.source_title end as source_title,
+        case when c.parent_type = 'source' then s.original_url else wiki_source.original_url end as original_url,
+        case when c.parent_type = 'wiki_page' then wp.slug else source_wiki.wiki_slug end as wiki_slug,
+        case when c.parent_type = 'wiki_page' then wp.title else source_wiki.wiki_title end as wiki_title
       from chunks c
       left join sources s on c.parent_type = 'source' and s.id = c.parent_id
-      left join source_wiki_pages swps on swps.source_id = s.id
-      left join wiki_pages wps on wps.id = swps.wiki_page_id
+      left join captures sc on sc.id = s.capture_id
+      left join lateral (
+        select wp.slug as wiki_slug, wp.title as wiki_title
+        from source_wiki_pages swps
+        join wiki_pages wp on wp.id = swps.wiki_page_id
+        where swps.source_id = s.id
+          and wp.user_id = c.user_id
+          and wp.status <> 'archived'
+          and swps.relation_type <> 'restored_from_merge'
+        order by swps.created_at desc
+        limit 1
+      ) source_wiki on true
       left join wiki_pages wp on c.parent_type = 'wiki_page' and wp.id = c.parent_id
-      left join source_wiki_pages swpw on swpw.wiki_page_id = wp.id
-      left join sources ws on ws.id = swpw.source_id
-      where c.user_id = $1 and c.embedding is not null
+      left join lateral (
+        select s.id as source_id, s.title as source_title, s.original_url
+        from source_wiki_pages swpw
+        join sources s on s.id = swpw.source_id
+        left join captures wc on wc.id = s.capture_id
+        where swpw.wiki_page_id = wp.id
+          and s.user_id = c.user_id
+          and (wc.status is null or wc.status <> 'ignored')
+          and swpw.relation_type <> 'restored_from_merge'
+        order by s.created_at desc
+        limit 1
+      ) wiki_source on true
+      where c.user_id = $1
+        and c.embedding is not null
+        and (
+          (c.parent_type = 'source' and s.id is not null and (sc.status is null or sc.status <> 'ignored'))
+          or (c.parent_type = 'wiki_page' and wp.id is not null and wp.status <> 'archived')
+        )
       order by c.embedding <=> $2::vector
       limit 12
     `,
@@ -592,19 +629,43 @@ async function retrieveKeywordChunks(userId: string, searchQuery: string) {
         null::text[] as graph_path,
         null::real as graph_weight,
         ts_rank_cd(to_tsvector('simple', c.content), websearch_to_tsquery('simple', $2)) as keyword_rank,
-        case when c.parent_type = 'source' then s.id else ws.id end as source_id,
-        case when c.parent_type = 'source' then s.title else ws.title end as source_title,
-        case when c.parent_type = 'source' then s.original_url else ws.original_url end as original_url,
-        case when c.parent_type = 'wiki_page' then wp.slug else wps.slug end as wiki_slug,
-        case when c.parent_type = 'wiki_page' then wp.title else wps.title end as wiki_title
+        case when c.parent_type = 'source' then s.id else wiki_source.source_id end as source_id,
+        case when c.parent_type = 'source' then s.title else wiki_source.source_title end as source_title,
+        case when c.parent_type = 'source' then s.original_url else wiki_source.original_url end as original_url,
+        case when c.parent_type = 'wiki_page' then wp.slug else source_wiki.wiki_slug end as wiki_slug,
+        case when c.parent_type = 'wiki_page' then wp.title else source_wiki.wiki_title end as wiki_title
       from chunks c
       left join sources s on c.parent_type = 'source' and s.id = c.parent_id
-      left join source_wiki_pages swps on swps.source_id = s.id
-      left join wiki_pages wps on wps.id = swps.wiki_page_id
+      left join captures sc on sc.id = s.capture_id
+      left join lateral (
+        select wp.slug as wiki_slug, wp.title as wiki_title
+        from source_wiki_pages swps
+        join wiki_pages wp on wp.id = swps.wiki_page_id
+        where swps.source_id = s.id
+          and wp.user_id = c.user_id
+          and wp.status <> 'archived'
+          and swps.relation_type <> 'restored_from_merge'
+        order by swps.created_at desc
+        limit 1
+      ) source_wiki on true
       left join wiki_pages wp on c.parent_type = 'wiki_page' and wp.id = c.parent_id
-      left join source_wiki_pages swpw on swpw.wiki_page_id = wp.id
-      left join sources ws on ws.id = swpw.source_id
+      left join lateral (
+        select s.id as source_id, s.title as source_title, s.original_url
+        from source_wiki_pages swpw
+        join sources s on s.id = swpw.source_id
+        left join captures wc on wc.id = s.capture_id
+        where swpw.wiki_page_id = wp.id
+          and s.user_id = c.user_id
+          and (wc.status is null or wc.status <> 'ignored')
+          and swpw.relation_type <> 'restored_from_merge'
+        order by s.created_at desc
+        limit 1
+      ) wiki_source on true
       where c.user_id = $1
+        and (
+          (c.parent_type = 'source' and s.id is not null and (sc.status is null or sc.status <> 'ignored'))
+          or (c.parent_type = 'wiki_page' and wp.id is not null and wp.status <> 'archived')
+        )
         and (
           c.content ilike any($3::text[])
           or to_tsvector('simple', c.content) @@ websearch_to_tsquery('simple', $2)
@@ -659,6 +720,8 @@ async function retrieveGraphExpandedChunks(
         left join edge_weights ew on ew.edge_type = e.edge_type
         join seed_nodes sn on sn.parent_type = e.from_type and sn.parent_id = e.from_id
         where e.user_id = $1
+          and e.weight > 0
+          and (e.evidence->>'inactive_reason') is null
         union all
         select
           e.from_type as parent_type,
@@ -671,6 +734,8 @@ async function retrieveGraphExpandedChunks(
         left join edge_weights ew on ew.edge_type = e.edge_type
         join seed_nodes sn on sn.parent_type = e.to_type and sn.parent_id = e.to_id
         where e.user_id = $1
+          and e.weight > 0
+          and (e.evidence->>'inactive_reason') is null
       ),
       two_hop_nodes as (
         select
@@ -684,6 +749,8 @@ async function retrieveGraphExpandedChunks(
         join knowledge_edges e on e.user_id = $1
           and e.from_type = oh.parent_type
           and e.from_id = oh.parent_id
+          and e.weight > 0
+          and (e.evidence->>'inactive_reason') is null
         left join edge_weights ew on ew.edge_type = e.edge_type
         where $5::boolean
         union all
@@ -698,6 +765,8 @@ async function retrieveGraphExpandedChunks(
         join knowledge_edges e on e.user_id = $1
           and e.to_type = oh.parent_type
           and e.to_id = oh.parent_id
+          and e.weight > 0
+          and (e.evidence->>'inactive_reason') is null
         left join edge_weights ew on ew.edge_type = e.edge_type
         where $5::boolean
       ),
@@ -751,19 +820,43 @@ async function retrieveGraphExpandedChunks(
               when c.parent_type = 'wiki_page' and wp.title ilike any($8::text[]) then 1
               else 0
             end as title_relevance,
-            case when c.parent_type = 'source' then s.id else ws.id end as source_id,
-            case when c.parent_type = 'source' then s.title else ws.title end as source_title,
-            case when c.parent_type = 'source' then s.original_url else ws.original_url end as original_url,
-            case when c.parent_type = 'wiki_page' then wp.slug else wps.slug end as wiki_slug,
-            case when c.parent_type = 'wiki_page' then wp.title else wps.title end as wiki_title
+            case when c.parent_type = 'source' then s.id else wiki_source.source_id end as source_id,
+            case when c.parent_type = 'source' then s.title else wiki_source.source_title end as source_title,
+            case when c.parent_type = 'source' then s.original_url else wiki_source.original_url end as original_url,
+            case when c.parent_type = 'wiki_page' then wp.slug else source_wiki.wiki_slug end as wiki_slug,
+            case when c.parent_type = 'wiki_page' then wp.title else source_wiki.wiki_title end as wiki_title
           from ranked_nodes rn
           join chunks c on c.user_id = $1 and c.parent_type = rn.parent_type and c.parent_id = rn.parent_id
           left join sources s on c.parent_type = 'source' and s.id = c.parent_id
-          left join source_wiki_pages swps on swps.source_id = s.id
-          left join wiki_pages wps on wps.id = swps.wiki_page_id
+          left join captures sc on sc.id = s.capture_id
+          left join lateral (
+            select wp.slug as wiki_slug, wp.title as wiki_title
+            from source_wiki_pages swps
+            join wiki_pages wp on wp.id = swps.wiki_page_id
+            where swps.source_id = s.id
+              and wp.user_id = c.user_id
+              and wp.status <> 'archived'
+              and swps.relation_type <> 'restored_from_merge'
+            order by swps.created_at desc
+            limit 1
+          ) source_wiki on true
           left join wiki_pages wp on c.parent_type = 'wiki_page' and wp.id = c.parent_id
-          left join source_wiki_pages swpw on swpw.wiki_page_id = wp.id
-          left join sources ws on ws.id = swpw.source_id
+          left join lateral (
+            select s.id as source_id, s.title as source_title, s.original_url
+            from source_wiki_pages swpw
+            join sources s on s.id = swpw.source_id
+            left join captures wc on wc.id = s.capture_id
+            where swpw.wiki_page_id = wp.id
+              and s.user_id = c.user_id
+              and (wc.status is null or wc.status <> 'ignored')
+              and swpw.relation_type <> 'restored_from_merge'
+            order by s.created_at desc
+            limit 1
+          ) wiki_source on true
+          where (
+            (c.parent_type = 'source' and s.id is not null and (sc.status is null or sc.status <> 'ignored'))
+            or (c.parent_type = 'wiki_page' and wp.id is not null and wp.status <> 'archived')
+          )
         ) scored_chunks
       )
       select

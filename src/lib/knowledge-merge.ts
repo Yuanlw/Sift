@@ -197,6 +197,248 @@ export async function commitWikiMerge(input: {
   };
 }
 
+export async function restoreWikiMergeHistory(input: {
+  historyId: string;
+  userId: string;
+}) {
+  const result = await query<{
+    after_content_markdown: string;
+    after_title: string;
+    before_content_markdown: string;
+    before_title: string;
+    created_at: string;
+    current_content_markdown: string;
+    current_title: string;
+    is_latest_history: boolean;
+    merged_source_ids: Json;
+    merged_wiki_page_id: string | null;
+    target_wiki_page_id: string;
+    target_wiki_slug: string;
+  }>(
+    `
+      select
+        h.after_title,
+        h.after_content_markdown,
+        h.before_title,
+        h.before_content_markdown,
+        h.created_at::text,
+        h.merged_source_ids,
+        h.merged_wiki_page_id,
+        h.target_wiki_page_id,
+        wp.slug as target_wiki_slug,
+        wp.title as current_title,
+        wp.content_markdown as current_content_markdown,
+        not exists (
+          select 1
+          from wiki_merge_histories newer
+          where newer.user_id = h.user_id
+            and newer.target_wiki_page_id = h.target_wiki_page_id
+            and newer.created_at > h.created_at
+        ) as is_latest_history
+      from wiki_merge_histories h
+      join wiki_pages wp on wp.id = h.target_wiki_page_id
+        and wp.user_id = h.user_id
+      where h.id = $1
+        and h.user_id = $2
+      limit 1
+    `,
+    [input.historyId, input.userId],
+  );
+  const history = result.rows[0];
+
+  if (!history) {
+    throw new Error("Merge history not found.");
+  }
+
+  if (!history.is_latest_history) {
+    throw new Error("Merge history is not the latest merge history.");
+  }
+
+  if (
+    history.current_title !== history.after_title ||
+    history.current_content_markdown !== history.after_content_markdown
+  ) {
+    throw new Error("Merge history is not the current wiki version.");
+  }
+
+  const chunks = chunkText(history.before_content_markdown);
+  const embeddings = await embedTexts(chunks, {
+    userId: input.userId,
+    stage: "management",
+    role: "embedding",
+    purpose: "wiki.merge.restore.embedding",
+    resourceType: "wiki_page",
+    resourceId: history.target_wiki_page_id,
+    metadata: {
+      merge_history_id: input.historyId,
+    },
+  }).catch(() => []);
+  const embeddingStatus = embeddings.length === chunks.length ? "completed" : "skipped";
+  const mergedSourceIds = getJsonStringArray(history.merged_source_ids);
+
+  await transaction(async (client) => {
+    const restoreResult = await client.query(
+      `
+        update wiki_pages
+        set title = $3,
+            content_markdown = $4,
+            updated_at = now()
+        where id = $1
+          and user_id = $2
+          and title = $5
+          and content_markdown = $6
+          and not exists (
+            select 1
+            from wiki_merge_histories newer
+            where newer.user_id = $2
+              and newer.target_wiki_page_id = $1
+              and newer.created_at > $7::timestamptz
+          )
+        returning id
+      `,
+      [
+        history.target_wiki_page_id,
+        input.userId,
+        history.before_title,
+        history.before_content_markdown,
+        history.after_title,
+        history.after_content_markdown,
+        history.created_at,
+      ],
+    );
+
+    if (restoreResult.rowCount !== 1) {
+      throw new Error("Merge history is not the current wiki version.");
+    }
+
+    await markMergedRelationsInactive(client, {
+      historyId: input.historyId,
+      mergedSourceIds,
+      mergedWikiPageId: history.merged_wiki_page_id,
+      targetWikiPageId: history.target_wiki_page_id,
+      userId: input.userId,
+    });
+    await rebuildWikiChunks(
+      client,
+      input.userId,
+      history.target_wiki_page_id,
+      history.before_content_markdown,
+      embeddings,
+    );
+    await client.query(
+      `
+        update wiki_merge_histories
+        set metadata = coalesce(metadata, '{}'::jsonb)
+          || jsonb_build_object(
+            'last_restored_at', now(),
+            'restore_embedding_status', $3::text,
+            'restored_relation_count', $4::int
+          )
+        where id = $1
+          and user_id = $2
+      `,
+      [input.historyId, input.userId, embeddingStatus, mergedSourceIds.length],
+    );
+  });
+
+  return {
+    embeddingStatus,
+    slug: history.target_wiki_slug,
+    targetWikiId: history.target_wiki_page_id,
+    title: history.before_title,
+  };
+}
+
+async function markMergedRelationsInactive(
+  client: PoolClient,
+  input: {
+    historyId: string;
+    mergedSourceIds: string[];
+    mergedWikiPageId: string | null;
+    targetWikiPageId: string;
+    userId: string;
+  },
+) {
+  if (input.mergedSourceIds.length > 0) {
+    await client.query(
+      `
+        update source_wiki_pages
+        set relation_type = 'restored_from_merge',
+            confidence = least(coalesce(confidence, 0), 0.2)
+        where wiki_page_id = $1
+          and source_id = any($2::uuid[])
+          and relation_type = 'merged_into_wiki'
+      `,
+      [input.targetWikiPageId, input.mergedSourceIds],
+    );
+    await client.query(
+      `
+        update knowledge_edges
+        set weight = 0,
+            confidence = 0,
+            evidence = coalesce(evidence, '{}'::jsonb)
+              || jsonb_build_object(
+                'inactive_at', now(),
+                'inactive_reason', 'wiki_merge_restore',
+                'merge_history_id', $4::text
+              ),
+            updated_at = now()
+        where user_id = $1
+          and edge_type = 'source_wiki'
+          and (
+            (
+              from_type = 'source'
+              and from_id = any($2::uuid[])
+              and to_type = 'wiki_page'
+              and to_id = $3
+            )
+            or (
+              to_type = 'source'
+              and to_id = any($2::uuid[])
+              and from_type = 'wiki_page'
+              and from_id = $3
+            )
+          )
+      `,
+      [input.userId, input.mergedSourceIds, input.targetWikiPageId, input.historyId],
+    );
+  }
+
+  if (input.mergedWikiPageId && input.mergedWikiPageId !== input.targetWikiPageId) {
+    await client.query(
+      `
+        update knowledge_edges
+        set weight = 0,
+            confidence = 0,
+            evidence = coalesce(evidence, '{}'::jsonb)
+              || jsonb_build_object(
+                'inactive_at', now(),
+                'inactive_reason', 'wiki_merge_restore',
+                'merge_history_id', $4::text
+              ),
+            updated_at = now()
+        where user_id = $1
+          and edge_type = 'related_wiki'
+          and (
+            (
+              from_type = 'wiki_page'
+              and from_id = $2
+              and to_type = 'wiki_page'
+              and to_id = $3
+            )
+            or (
+              from_type = 'wiki_page'
+              and from_id = $3
+              and to_type = 'wiki_page'
+              and to_id = $2
+            )
+          )
+      `,
+      [input.userId, input.mergedWikiPageId, input.targetWikiPageId, input.historyId],
+    );
+  }
+}
+
 async function loadWikiMergeCandidate(input: {
   discoveryId: string;
   userId: string;
@@ -228,15 +470,22 @@ async function loadWikiMergeCandidate(input: {
         rswp.content_markdown as related_source_wiki_content_markdown
       from knowledge_discoveries kd
       left join sources s on s.id = kd.source_id and s.user_id = kd.user_id
-      left join wiki_pages wp on wp.id = kd.wiki_page_id and wp.user_id = kd.user_id
+      left join captures c on c.id = s.capture_id
+      left join wiki_pages wp on wp.id = kd.wiki_page_id and wp.user_id = kd.user_id and wp.status <> 'archived'
       left join sources rs on rs.id = kd.related_source_id and rs.user_id = kd.user_id
+      left join captures rc on rc.id = rs.capture_id
       left join source_wiki_pages rsswp on rsswp.source_id = rs.id
       left join wiki_pages rswp on rswp.id = rsswp.wiki_page_id and rswp.user_id = kd.user_id
-      left join wiki_pages rwp on rwp.id = kd.related_wiki_page_id and rwp.user_id = kd.user_id
+        and rswp.status <> 'archived'
+      left join wiki_pages rwp on rwp.id = kd.related_wiki_page_id and rwp.user_id = kd.user_id and rwp.status <> 'archived'
       where kd.id = $1
         and kd.user_id = $2
         and kd.status <> 'ignored'
         and kd.discovery_type in ('related_wiki', 'duplicate_source')
+        and (s.id is null or c.status is null or c.status <> 'ignored')
+        and (rs.id is null or rc.status is null or rc.status <> 'ignored')
+        and (kd.wiki_page_id is null or wp.id is not null)
+        and (kd.related_wiki_page_id is null or rwp.id is not null)
       order by rsswp.created_at desc nulls last
       limit 1
     `,
@@ -536,4 +785,12 @@ function normalizeTitle(value: string, fallback: string) {
 function normalizeMarkdown(value: string, fallback: string) {
   const normalized = value.trim();
   return normalized.length >= 20 ? normalized.slice(0, 120000) : fallback;
+}
+
+function getJsonStringArray(value: Json) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
 }

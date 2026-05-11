@@ -29,7 +29,7 @@ const copy = {
     archived: "已归档所选知识页。",
     restored: "已恢复所选知识页。",
     deleted: "已永久删除所选知识页。",
-    confirmDelete: "永久删除后不可恢复。确定删除所选知识页吗？",
+    confirmDelete: "永久删除后不可恢复，会同步清理由所选知识页独占的来源资料。确定删除所选知识页吗？",
     failed: "操作失败。",
   },
   en: {
@@ -44,7 +44,7 @@ const copy = {
     archived: "Selected wiki pages archived.",
     restored: "Selected wiki pages restored.",
     deleted: "Selected wiki pages permanently deleted.",
-    confirmDelete: "Permanent deletion cannot be undone. Delete the selected wiki pages?",
+    confirmDelete: "Permanent deletion cannot be undone. It also removes sources only linked to the selected wiki pages. Delete the selected wiki pages?",
     failed: "Action failed.",
   },
 } satisfies Record<Locale, Record<string, string>>;
@@ -130,16 +130,14 @@ export function WikiManagementList({
         >
           {pending && pendingAction === mode ? (mode === "restore" ? t.restoring : t.archiving) : actionLabel}
         </button>
-        {mode === "restore" ? (
-          <button
-            className="button button-danger"
-            disabled={selectedSlugs.length === 0 || pending}
-            onClick={() => void runBulkAction("delete")}
-            type="button"
-          >
-            {pending && pendingAction === "delete" ? t.deleting : t.delete}
-          </button>
-        ) : null}
+        <button
+          className="button button-danger"
+          disabled={selectedSlugs.length === 0 || pending}
+          onClick={() => void runBulkAction("delete")}
+          type="button"
+        >
+          {pending && pendingAction === "delete" ? t.deleting : t.delete}
+        </button>
         {status ? <span className="meta">{status}</span> : null}
       </div>
       <div className="list">

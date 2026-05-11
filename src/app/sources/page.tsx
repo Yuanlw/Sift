@@ -13,6 +13,7 @@ interface SourceListRow {
   source_type: CaptureType;
   original_url: string | null;
   summary: string | null;
+  extracted_preview: string;
   created_at: string;
   capture_status: CaptureStatus | null;
   wiki_title: string | null;
@@ -22,12 +23,11 @@ interface SourceListParams {
   limit: number;
   q: string;
   type: CaptureType | "";
-  view: "active" | "archived" | "low-signal";
+  view: "active" | "archived";
 }
 
 const SOURCE_PAGE_SIZE = 24;
 const SOURCE_MAX_LIMIT = 144;
-const LOW_SIGNAL_PATTERN = "(P[0-9]+|SMOKE|TEST|REVIEW|REGRESSION)";
 
 async function loadSources(params: SourceListParams) {
   const userContext = await getUserContextFromHeaders();
@@ -40,13 +40,23 @@ async function loadSources(params: SourceListParams) {
         s.source_type,
         s.original_url,
         s.summary,
+        left(regexp_replace(s.extracted_text, '\\s+', ' ', 'g'), 220) as extracted_preview,
         s.created_at,
         c.status as capture_status,
-        wp.title as wiki_title
+        wiki_link.wiki_title
       from sources s
       left join captures c on c.id = s.capture_id
-      left join source_wiki_pages swp on swp.source_id = s.id
-      left join wiki_pages wp on wp.id = swp.wiki_page_id
+      left join lateral (
+        select wp.title as wiki_title
+        from source_wiki_pages swp
+        join wiki_pages wp on wp.id = swp.wiki_page_id
+        where swp.source_id = s.id
+          and wp.user_id = s.user_id
+          and wp.status <> 'archived'
+          and swp.relation_type <> 'restored_from_merge'
+        order by swp.created_at desc
+        limit 1
+      ) wiki_link on true
       where s.user_id = $1
         and (
           (
@@ -54,29 +64,15 @@ async function loadSources(params: SourceListParams) {
             and c.status = 'ignored'
           )
           or (
-            $4 = 'low-signal'
-            and (c.status is null or c.status <> 'ignored')
-            and (
-              s.title ~* $6
-              or coalesce(s.summary, '') ~* $6
-              or coalesce(c.raw_text, '') ~* $6
-            )
-          )
-          or (
             $4 = 'active'
             and (c.status is null or c.status <> 'ignored')
-            and not (
-              s.title ~* $6
-              or coalesce(s.summary, '') ~* $6
-              or coalesce(c.raw_text, '') ~* $6
-            )
           )
         )
         and (
           $2 = ''
           or to_tsvector('simple', s.title || ' ' || coalesce(s.summary, '') || ' ' || s.extracted_text)
             @@ websearch_to_tsquery('simple', $2)
-          or s.id = any($7::uuid[])
+          or s.id = any($6::uuid[])
           or s.title ilike '%' || $2 || '%'
           or coalesce(s.summary, '') ilike '%' || $2 || '%'
           or s.extracted_text ilike '%' || $2 || '%'
@@ -90,11 +86,11 @@ async function loadSources(params: SourceListParams) {
           )
           else 0
         end desc,
-        case when s.id = any($7::uuid[]) then 1 else 0 end desc,
+        case when s.id = any($6::uuid[]) then 1 else 0 end desc,
         s.created_at desc
       limit $5
     `,
-    [userContext.userId, params.q, params.type, params.view, params.limit + 1, LOW_SIGNAL_PATTERN, semanticSourceIds],
+    [userContext.userId, params.q, params.type, params.view, params.limit + 1, semanticSourceIds],
   );
 
   return result.rows;
@@ -176,7 +172,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: Rec
               ]
                 .filter(Boolean)
                 .join(" · "),
-              summary: source.summary,
+              summary: source.summary || source.extracted_preview,
               title: source.title,
               typeLabel: getCaptureTypeLabel(source.source_type, locale),
             }))}
@@ -196,8 +192,6 @@ export default async function SourcesPage({ searchParams }: { searchParams?: Rec
           title={
             listParams.view === "archived"
               ? localeText(locale, "还没有已归档来源", "No archived sources")
-              : listParams.view === "low-signal"
-                ? localeText(locale, "还没有测试资料", "No test captures")
               : localeText(locale, "还没有来源资料", "No sources yet")
           }
           detail={localeText(locale, "可以换个筛选条件，或继续收集新的资料。", "Try another filter or keep capturing new material.")}
@@ -236,9 +230,6 @@ function ListToolbar({ locale, params }: { locale: ReturnType<typeof getLocale>;
         <Link className={params.view === "archived" ? "is-active" : ""} href={buildSourcesHref({ ...params, view: "archived" }, SOURCE_PAGE_SIZE)} scroll={false}>
           {localeText(locale, "已归档", "Archived")}
         </Link>
-        <Link className={params.view === "low-signal" ? "is-active" : ""} href={buildSourcesHref({ ...params, view: "low-signal" }, SOURCE_PAGE_SIZE)} scroll={false}>
-          {localeText(locale, "测试资料", "Tests")}
-        </Link>
       </div>
       <form className="management-filter-form" method="get">
         <input name="view" type="hidden" value={params.view} />
@@ -272,7 +263,7 @@ function parseSourceListParams(searchParams: Record<string, string | undefined> 
 }
 
 function parseSourceView(value: string | undefined): SourceListParams["view"] {
-  return value === "archived" || value === "low-signal" ? value : "active";
+  return value === "archived" ? value : "active";
 }
 
 function parseCaptureType(value: string | undefined): CaptureType | "" {
@@ -293,10 +284,6 @@ function buildSourcesHref(params: SourceListParams, limit: number) {
   const searchParams = new URLSearchParams();
 
   if (params.view === "archived") {
-    searchParams.set("view", params.view);
-  }
-
-  if (params.view === "low-signal") {
     searchParams.set("view", params.view);
   }
 

@@ -81,8 +81,8 @@ async function loadCapture(id: string) {
         s.id as source_id,
         s.title as source_title,
         s.summary as source_summary,
-        wp.slug as wiki_slug,
-        wp.title as wiki_title
+        wiki_link.wiki_slug,
+        wiki_link.wiki_title
       from captures c
       left join lateral (
         select id, status, current_step, step_status, error_message, started_at, finished_at
@@ -99,8 +99,17 @@ async function loadCapture(id: string) {
         limit 1
       ) ec on true
       left join sources s on s.capture_id = c.id
-      left join source_wiki_pages swp on swp.source_id = s.id
-      left join wiki_pages wp on wp.id = swp.wiki_page_id
+      left join lateral (
+        select wp.slug as wiki_slug, wp.title as wiki_title
+        from source_wiki_pages swp
+        join wiki_pages wp on wp.id = swp.wiki_page_id
+        where swp.source_id = s.id
+          and wp.user_id = c.user_id
+          and wp.status <> 'archived'
+          and swp.relation_type <> 'restored_from_merge'
+        order by swp.created_at desc
+        limit 1
+      ) wiki_link on true
       where c.id = $1 and c.user_id = $2
       limit 1
     `,

@@ -1,0 +1,211 @@
+<svg width="1600" height="1040" viewBox="0 0 1600 1040" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font: 800 38px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #14213d; }
+      .subtitle { font: 600 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #526070; }
+      .section { font: 800 22px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #14213d; }
+      .label { font: 800 18px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172033; }
+      .body { font: 600 15px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #344054; }
+      .small { font: 600 13px "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #5b6675; }
+      .code { font: 700 13px "SFMono-Regular", Consolas, Menlo, monospace; fill: #344054; }
+      .panel { fill: #ffffff; stroke: #d8e0ea; stroke-width: 2; }
+      .client { fill: #f4f8ff; stroke: #3b82f6; stroke-width: 2; }
+      .save { fill: #fff8ed; stroke: #f59e0b; stroke-width: 2; }
+      .worker { fill: #f2fbf6; stroke: #22a35a; stroke-width: 2; }
+      .store { fill: #f7f2ff; stroke: #7c3aed; stroke-width: 2; }
+      .surface { fill: #fff5f5; stroke: #ef4444; stroke-width: 2; }
+      .agent { fill: #eefdfc; stroke: #0f9f9a; stroke-width: 2; }
+      .cloud { fill: #f8fafc; stroke: #64748b; stroke-width: 2; stroke-dasharray: 8 8; }
+      .line { fill: none; stroke: #667085; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .line-blue { stroke: #2563eb; }
+      .line-amber { stroke: #d97706; }
+      .line-green { stroke: #15803d; }
+      .line-purple { stroke: #6d28d9; }
+      .line-red { stroke: #dc2626; }
+      .line-teal { stroke: #0f766e; }
+      .dash { stroke-dasharray: 7 8; }
+    </style>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#0f172a" flood-opacity="0.11"/>
+    </filter>
+    <linearGradient id="background" x1="0" y1="0" x2="1600" y2="1040" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fbfdff"/>
+      <stop offset="0.48" stop-color="#f7fbf4"/>
+      <stop offset="1" stop-color="#fff7ed"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#667085"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowAmber" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#d97706"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#15803d"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#6d28d9"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L10 6L2 10Z" fill="#0f766e"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1040" fill="url(#background)"/>
+  <rect x="28" y="24" width="1544" height="992" rx="8" fill="#ffffff" stroke="#e5eaf1" stroke-width="2" filter="url(#shadow)"/>
+
+  <text x="80" y="78" class="title">Sift 系统架构图</text>
+  <text x="80" y="112" class="subtitle">Capture-first：快速保存，后台理解。</text>
+  <text x="1326" y="78" class="small">边界原则</text>
+  <text x="1326" y="102" class="body">不做通用 Agent Runtime</text>
+  <text x="1326" y="126" class="body">复杂执行交给外部 Agent</text>
+
+  <!-- Client and input layer -->
+  <rect x="70" y="164" width="330" height="300" rx="8" class="client"/>
+  <text x="96" y="202" class="section">用户与 Capture 入口</text>
+  <rect x="96" y="228" width="278" height="48" rx="8" fill="#ffffff" stroke="#b7cdf8" stroke-width="1.5"/>
+  <text x="118" y="258" class="label">Web Inbox / 首页快存</text>
+  <rect x="96" y="288" width="278" height="48" rx="8" fill="#ffffff" stroke="#b7cdf8" stroke-width="1.5"/>
+  <text x="118" y="318" class="label">移动快存 /capture</text>
+  <rect x="96" y="348" width="278" height="48" rx="8" fill="#ffffff" stroke="#b7cdf8" stroke-width="1.5"/>
+  <text x="118" y="378" class="label">URL / 文本 / 截图 / 备注</text>
+  <rect x="96" y="408" width="278" height="36" rx="8" fill="#ffffff" stroke="#b7cdf8" stroke-width="1.5"/>
+  <text x="118" y="431" class="body">书签 HTML、批量 URL、相册截图导入</text>
+
+  <!-- Fast save layer -->
+  <rect x="500" y="164" width="330" height="300" rx="8" class="save"/>
+  <text x="526" y="202" class="section">快速保存层</text>
+  <text x="526" y="235" class="code">POST /api/captures</text>
+  <rect x="526" y="258" width="278" height="46" rx="8" fill="#ffffff" stroke="#f5c267" stroke-width="1.5"/>
+  <text x="548" y="287" class="label">写入 Capture 原始数据</text>
+  <rect x="526" y="316" width="278" height="46" rx="8" fill="#ffffff" stroke="#f5c267" stroke-width="1.5"/>
+  <text x="548" y="345" class="label">保存附件与 raw_payload</text>
+  <rect x="526" y="374" width="278" height="46" rx="8" fill="#ffffff" stroke="#f5c267" stroke-width="1.5"/>
+  <text x="548" y="403" class="label">创建 ProcessingJob</text>
+  <text x="526" y="444" class="body">同步路径只保存、校验、派发任务</text>
+
+  <!-- Async worker layer -->
+  <rect x="920" y="164" width="600" height="300" rx="8" class="worker"/>
+  <text x="946" y="202" class="section">后台异步处理层</text>
+  <text x="946" y="235" class="code">Inngest / recover-processing / processing_jobs.step_status</text>
+  <rect x="946" y="258" width="160" height="52" rx="8" fill="#ffffff" stroke="#a6d9b9" stroke-width="1.5"/>
+  <text x="970" y="280" class="label">提取</text>
+  <text x="970" y="301" class="small">网页正文 / OCR</text>
+  <rect x="1134" y="258" width="160" height="52" rx="8" fill="#ffffff" stroke="#a6d9b9" stroke-width="1.5"/>
+  <text x="1158" y="280" class="label">结构化</text>
+  <text x="1158" y="301" class="small">摘要 / Wiki draft</text>
+  <rect x="1322" y="258" width="160" height="52" rx="8" fill="#ffffff" stroke="#a6d9b9" stroke-width="1.5"/>
+  <text x="1346" y="280" class="label">落知识</text>
+  <text x="1346" y="301" class="small">Source / Wiki</text>
+  <rect x="946" y="334" width="160" height="52" rx="8" fill="#ffffff" stroke="#a6d9b9" stroke-width="1.5"/>
+  <text x="970" y="356" class="label">索引</text>
+  <text x="970" y="377" class="small">Chunks / Embeddings</text>
+  <rect x="1134" y="334" width="160" height="52" rx="8" fill="#ffffff" stroke="#a6d9b9" stroke-width="1.5"/>
+  <text x="1158" y="356" class="label">关系</text>
+  <text x="1158" y="377" class="small">KnowledgeEdge</text>
+  <rect x="1322" y="334" width="160" height="52" rx="8" fill="#ffffff" stroke="#a6d9b9" stroke-width="1.5"/>
+  <text x="1346" y="356" class="label">增强</text>
+  <text x="1346" y="377" class="small">发现 / 推荐 / 计量</text>
+  <text x="946" y="428" class="body">任一步失败不丢原始资料；可重试、可降级、可低频恢复。</text>
+
+  <!-- Main flow arrows -->
+  <path d="M400 314H500" class="line line-blue" marker-end="url(#arrowBlue)"/>
+  <path d="M830 314H920" class="line line-amber" marker-end="url(#arrowAmber)"/>
+
+  <!-- Models and file storage -->
+  <rect x="920" y="510" width="290" height="150" rx="8" class="panel"/>
+  <text x="946" y="548" class="section">模型能力</text>
+  <text x="946" y="580" class="body">文本生成 / Embedding / Vision OCR</text>
+  <text x="946" y="606" class="body">省心 Gateway / BYOK / 本地模型网关</text>
+  <text x="946" y="632" class="small">模型不可用时保留资料并标记降级</text>
+
+  <rect x="1230" y="510" width="290" height="150" rx="8" class="panel"/>
+  <text x="1256" y="548" class="section">私有附件存储</text>
+  <text x="1256" y="580" class="code">.data/uploads/captures</text>
+  <text x="1256" y="606" class="body">截图 / 图片 / 上传文件</text>
+  <text x="1256" y="632" class="small">授权路由读取，避免静态公开泄露</text>
+
+  <path d="M1065 510V464" class="line line-green dash" marker-end="url(#arrowGreen)"/>
+  <path d="M1375 510V464" class="line line-green dash" marker-end="url(#arrowGreen)"/>
+
+  <!-- Knowledge store -->
+  <rect x="70" y="520" width="760" height="230" rx="8" class="store"/>
+  <text x="96" y="558" class="section">知识数据层：Postgres + pgvector</text>
+  <rect x="96" y="584" width="156" height="58" rx="8" fill="#ffffff" stroke="#c8b5f6" stroke-width="1.5"/>
+  <text x="118" y="608" class="label">Capture</text>
+  <text x="118" y="629" class="small">一次保存动作</text>
+  <rect x="272" y="584" width="156" height="58" rx="8" fill="#ffffff" stroke="#c8b5f6" stroke-width="1.5"/>
+  <text x="294" y="608" class="label">Extracted</text>
+  <text x="294" y="629" class="small">可读提取层</text>
+  <rect x="448" y="584" width="156" height="58" rx="8" fill="#ffffff" stroke="#c8b5f6" stroke-width="1.5"/>
+  <text x="470" y="608" class="label">Source</text>
+  <text x="470" y="629" class="small">可追溯来源</text>
+  <rect x="624" y="584" width="156" height="58" rx="8" fill="#ffffff" stroke="#c8b5f6" stroke-width="1.5"/>
+  <text x="646" y="608" class="label">WikiPage</text>
+  <text x="646" y="629" class="small">长期主题页</text>
+  <rect x="96" y="664" width="156" height="58" rx="8" fill="#ffffff" stroke="#c8b5f6" stroke-width="1.5"/>
+  <text x="118" y="688" class="label">Chunks</text>
+  <text x="118" y="709" class="small">检索片段</text>
+  <rect x="272" y="664" width="156" height="58" rx="8" fill="#ffffff" stroke="#c8b5f6" stroke-width="1.5"/>
+  <text x="294" y="688" class="label">Embeddings</text>
+  <text x="294" y="709" class="small">语义索引</text>
+  <rect x="448" y="664" width="156" height="58" rx="8" fill="#ffffff" stroke="#c8b5f6" stroke-width="1.5"/>
+  <text x="470" y="688" class="label">Edges</text>
+  <text x="470" y="709" class="small">隐形关系层</text>
+  <rect x="624" y="664" width="156" height="58" rx="8" fill="#ffffff" stroke="#c8b5f6" stroke-width="1.5"/>
+  <text x="646" y="688" class="label">Audit / Events</text>
+  <text x="646" y="709" class="small">审计与留存</text>
+
+  <path d="M920 416C760 484 690 508 558 520" class="line line-purple" marker-end="url(#arrowPurple)"/>
+
+  <!-- Product surfaces -->
+  <rect x="70" y="800" width="760" height="156" rx="8" class="surface"/>
+  <text x="96" y="838" class="section">产品使用层</text>
+  <rect x="96" y="864" width="126" height="52" rx="8" fill="#ffffff" stroke="#f5b2b2" stroke-width="1.5"/>
+  <text x="124" y="896" class="label">Inbox</text>
+  <rect x="242" y="864" width="126" height="52" rx="8" fill="#ffffff" stroke="#f5b2b2" stroke-width="1.5"/>
+  <text x="266" y="896" class="label">Sources</text>
+  <rect x="388" y="864" width="126" height="52" rx="8" fill="#ffffff" stroke="#f5b2b2" stroke-width="1.5"/>
+  <text x="424" y="896" class="label">Wiki</text>
+  <rect x="534" y="864" width="126" height="52" rx="8" fill="#ffffff" stroke="#f5b2b2" stroke-width="1.5"/>
+  <text x="562" y="896" class="label">Ask</text>
+  <rect x="680" y="864" width="126" height="52" rx="8" fill="#ffffff" stroke="#f5b2b2" stroke-width="1.5"/>
+  <text x="704" y="896" class="label">Settings</text>
+  <text x="96" y="940" class="body">用户能看到处理中、失败、降级、来源、引用、合并历史和回滚入口。</text>
+
+  <path d="M450 750V800" class="line line-red" marker-end="url(#arrowRed)"/>
+  <path d="M665 464V800" class="line line-amber dash" marker-end="url(#arrowAmber)"/>
+  <text x="690" y="790" class="small">保存后先回 Inbox，处理结果逐步出现</text>
+
+  <!-- External agent layer -->
+  <rect x="920" y="800" width="600" height="156" rx="8" class="agent"/>
+  <text x="946" y="838" class="section">外部 Agent 接入层</text>
+  <rect x="946" y="864" width="252" height="52" rx="8" fill="#ffffff" stroke="#9ee0dc" stroke-width="1.5"/>
+  <text x="970" y="886" class="label">HTTP Agent API</text>
+  <text x="970" y="907" class="code">/api/agent/query</text>
+  <rect x="1222" y="864" width="252" height="52" rx="8" fill="#ffffff" stroke="#9ee0dc" stroke-width="1.5"/>
+  <text x="1246" y="886" class="label">MCP Endpoint</text>
+  <text x="1246" y="907" class="code">/api/mcp resources/tools</text>
+  <text x="946" y="940" class="body">给 Claude Code、Codex、脚本和 MCP 客户端读取长期知识上下文；返回引用和关系路径。</text>
+
+  <path d="M830 668C902 708 990 748 1112 800" class="line line-teal" marker-end="url(#arrowTeal)"/>
+  <path d="M1220 800V748C1220 700 1200 680 1162 660" class="line line-teal dash" marker-end="url(#arrowTeal)"/>
+  <text x="1240" y="744" class="small">Agent 只拿可信上下文，不接管通用执行</text>
+
+  <!-- Cloud control plane -->
+  <rect x="500" y="34" width="760" height="104" rx="8" class="cloud"/>
+  <text x="526" y="72" class="section">可选 Sift Cloud Control Plane</text>
+  <text x="526" y="104" class="body">订阅账号、Gateway token、额度账本、Stripe 状态、客服/退款后台</text>
+  <text x="526" y="128" class="small">不接管用户本地知识库；本地数据仍在客户端数据库与附件存储中。</text>
+  <path d="M880 138V510" class="line dash" marker-end="url(#arrow)"/>
+  <text x="895" y="494" class="small">授权默认模型通道</text>
+
+  <!-- Bottom thesis -->
+  <rect x="70" y="972" width="1450" height="28" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="795" y="991" text-anchor="middle" class="small">核心链路：Raw Capture → Extracted Content → Source → WikiPage → Chunks / Embeddings → Search / Ask / Agent Context</text>
+</svg>
